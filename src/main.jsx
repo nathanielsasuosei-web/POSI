@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import {
   Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Barcode,
   Camera, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3,
-  CreditCard, ImagePlus, LayoutDashboard, Minus, Package, PackagePlus,
+  CreditCard, ImagePlus, LayoutDashboard, LogOut, Minus, Package, PackagePlus,
   Pill, Plus, Printer, Search, ShieldCheck, ShoppingBag, ShoppingCart,
   SlidersHorizontal, Sparkles, TrendingUp, UserRound, Users, Wallet, X,
 } from 'lucide-react';
@@ -14,6 +14,17 @@ const SALES_STORAGE_KEY = 'posi-v2-sales';
 const ACTIVITY_STORAGE_KEY = 'posi-v2-activity';
 const categories = ['Pain relief', 'Vitamins', 'Allergy', 'Cold & flu', 'Antibiotics', 'First aid', 'Digestive', 'Personal care', 'Other'];
 const format = amount => `GH₵ ${Number(amount || 0).toFixed(2)}`;
+const readSessionValue = key => {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const readSessionRole = () => {
+  const role = readSessionValue('posi-session-role');
+  return role === 'owner' || role === 'cashier' ? role : null;
+};
 const localDateKey = (date = new Date()) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -95,9 +106,9 @@ function App() {
   const [products, setProducts, productSaveError] = usePersistentState(PRODUCT_STORAGE_KEY, starterProducts);
   const [sales, setSales, salesSaveError] = usePersistentState(SALES_STORAGE_KEY, makeStarterSales());
   const [activities, setActivities, activitySaveError] = usePersistentState(ACTIVITY_STORAGE_KEY, starterActivity);
-  const [role, setRole] = useState('owner');
-  const [activeView, setActiveView] = useState('Dashboard');
-  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  const [role, setRole] = useState(readSessionRole);
+  const [cashierName, setCashierName] = useState(() => readSessionValue('posi-session-cashier') || cashiers[0].name);
+  const [activeView, setActiveView] = useState(() => readSessionRole() === 'cashier' ? 'Point of sale' : 'Dashboard');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All products');
   const [inventorySearch, setInventorySearch] = useState('');
@@ -116,7 +127,7 @@ function App() {
 
   const currentStaff = role === 'owner'
     ? { name: 'Abena Mensah', initials: 'AM', title: 'Store owner' }
-    : { name: 'Ama Boateng', initials: 'AB', title: 'Cashier' };
+    : cashiers.find(cashier => cashier.name === cashierName) || cashiers[0];
   const currentDate = new Date();
   const todayKey = localDateKey(currentDate);
   const todaySales = useMemo(() => sales.filter(sale => sale.date === todayKey), [sales, todayKey]);
@@ -145,11 +156,33 @@ function App() {
     noticeTimer.current = window.setTimeout(() => setNotice(''), 2600);
   };
 
-  const switchRole = nextRole => {
+  const signIn = (nextRole, nextCashier = cashiers[0].name) => {
+    try {
+      window.sessionStorage.setItem('posi-session-role', nextRole);
+      window.sessionStorage.setItem('posi-session-cashier', nextCashier);
+    } catch {
+      // The demo can still be used if session storage is unavailable.
+    }
     setRole(nextRole);
-    setRoleMenuOpen(false);
-    setMobileCart(false);
+    setCashierName(nextCashier);
     setActiveView(nextRole === 'owner' ? 'Dashboard' : 'Point of sale');
+  };
+
+  const signOut = () => {
+    try {
+      window.sessionStorage.removeItem('posi-session-role');
+      window.sessionStorage.removeItem('posi-session-cashier');
+    } catch {
+      // Sign out still clears the in-memory demo session.
+    }
+    setRole(null);
+    setActiveView('Dashboard');
+    setCart([]);
+    setShowPay(false);
+    setShowProductModal(false);
+    setEditingProduct(null);
+    setMobileCart(false);
+    setShowSuccess(false);
   };
 
   const addActivity = activity => {
@@ -228,7 +261,6 @@ function App() {
   const navItems = role === 'owner'
     ? [
       { label: 'Overview', view: 'Dashboard', Icon: LayoutDashboard },
-      { label: 'Point of sale', view: 'Point of sale', Icon: ShoppingCart },
       { label: 'Inventory', view: 'Inventory', Icon: Package },
       { label: 'Sales', view: 'Sales', Icon: TrendingUp },
     ]
@@ -251,6 +283,8 @@ function App() {
       {!mobile && view === 'Inventory' && lowStockProducts.length > 0 && <span className="nav-count">{lowStockProducts.length}</span>}
     </button>
   ));
+
+  if (!role) return <LoginScreen onSignIn={signIn} />;
 
   return (
     <div className="app-shell">
@@ -282,26 +316,11 @@ function App() {
           <div className="top-actions">
             <span className="demo-chip"><span /> DEMO STORE</span>
             <span className="today"><Clock3 size={15} />{displayDate(currentDate)}</span>
-            <div className="role-menu-wrap">
-              <button className="role-trigger" onClick={() => setRoleMenuOpen(open => !open)} aria-expanded={roleMenuOpen}>
-                <span className="role-trigger-icon"><UserRound size={16} /></span>
-                <span className="role-trigger-copy"><small>Viewing as</small><b>{role === 'owner' ? 'Owner' : 'Cashier'}</b></span>
-                <ChevronDown size={15} />
-              </button>
-              {roleMenuOpen && <>
-                <button className="menu-dismiss" aria-label="Close role menu" onClick={() => setRoleMenuOpen(false)} />
-                <div className="role-dropdown">
-                  <span className="dropdown-kicker">SWITCH DEMO ROLE</span>
-                  <button className={role === 'owner' ? 'role-option active' : 'role-option'} onClick={() => switchRole('owner')}>
-                    <span className="role-option-icon owner-icon"><ShieldCheck size={17} /></span><span><b>Owner</b><small>Monitor sales, stock & cashiers</small></span>{role === 'owner' && <Check size={16} />}
-                  </button>
-                  <button className={role === 'cashier' ? 'role-option active' : 'role-option'} onClick={() => switchRole('cashier')}>
-                    <span className="role-option-icon cashier-icon"><ShoppingCart size={17} /></span><span><b>Cashier</b><small>Take sales & add products</small></span>{role === 'cashier' && <Check size={16} />}
-                  </button>
-                  <p>Role switching is a demo. A live shop needs staff sign-in.</p>
-                </div>
-              </>}
+            <div className="signed-in-user">
+              <span className={`avatar ${role === 'cashier' ? 'avatar-cashier' : ''}`}>{currentStaff.initials}</span>
+              <span><small>{role === 'owner' ? 'OWNER ACCOUNT' : 'CASHIER ACCOUNT'}</small><b>{currentStaff.name}</b></span>
             </div>
+            <button className="logout-button" onClick={signOut} aria-label="Sign out"><LogOut size={15} /><span>Sign out</span></button>
           </div>
         </header>
 
@@ -353,7 +372,7 @@ function App() {
         </div>
 
         {activeView === 'Point of sale' && <button className="mobile-cart-fab" onClick={() => setMobileCart(true)}><ShoppingCart size={18} /> View sale <span>{itemCount}</span><b>{format(total)}</b></button>}
-        <nav className={`mobile-nav ${role === 'cashier' ? 'cashier-nav' : ''}`} aria-label="Mobile navigation">{renderNav(true)}</nav>
+        <nav className="mobile-nav" aria-label="Mobile navigation">{renderNav(true)}</nav>
       </main>
 
       {showProductModal && <ProductFormModal key={editingProduct?.id || 'new-product'} initialProduct={editingProduct} onClose={() => { setShowProductModal(false); setEditingProduct(null); }} onSave={saveProduct} />}
@@ -362,6 +381,43 @@ function App() {
       {notice && <div className="toast" role="status"><CheckCircle2 size={17} />{notice}</div>}
     </div>
   );
+}
+
+function LoginScreen({ onSignIn }) {
+  const [selectedRole, setSelectedRole] = useState('owner');
+  const [selectedCashier, setSelectedCashier] = useState(cashiers[0].name);
+
+  return <main className="login-shell">
+    <section className="login-brand-panel">
+      <a className="brand login-brand" href="#login"><span className="brand-mark"><Plus size={21} strokeWidth={3} /></span><span className="brand-copy"><b>posi<span>.</span></b><small>PHARMACY SUITE</small></span></a>
+      <div className="login-hero-copy">
+        <span className="login-kicker"><span /> PHARMACY OPERATIONS</span>
+        <h1>One shop.<br /><span>Separate workspaces.</span></h1>
+        <p>The owner keeps an eye on the shop. Cashiers get a focused register for serving customers.</p>
+      </div>
+      <div className="login-side-card"><span className="side-card-icon"><Users size={18} /></span><span><b>Owner + cashier</b><small>Independent workspaces, shared shop activity</small></span><span className="side-card-check"><Check size={15} /></span></div>
+      <div className="login-brand-footer"><ShieldCheck size={14} /> Demo sign-in · shop data stays in this browser</div>
+    </section>
+    <section className="login-content">
+      <div className="login-card">
+        <span className="login-card-kicker">GREEN CROSS PHARMACY · ACCRA</span>
+        <h2>Sign in to POSI</h2>
+        <p className="login-intro">Choose the account and workspace you use at the shop.</p>
+        <div className="account-choices">
+          <button type="button" className={`account-choice ${selectedRole === 'owner' ? 'active' : ''}`} onClick={() => setSelectedRole('owner')}>
+            <span className="choice-icon owner-choice-icon"><ShieldCheck size={18} /></span><span className="choice-copy"><b>Owner workspace</b><small>Shop overview, staff monitor and all sales</small></span><span className="choice-check">{selectedRole === 'owner' && <Check size={14} />}</span>
+          </button>
+          <button type="button" className={`account-choice ${selectedRole === 'cashier' ? 'active' : ''}`} onClick={() => setSelectedRole('cashier')}>
+            <span className="choice-icon cashier-choice-icon"><ShoppingCart size={18} /></span><span className="choice-copy"><b>Cashier workspace</b><small>Register, inventory and your own sales</small></span><span className="choice-check">{selectedRole === 'cashier' && <Check size={14} />}</span>
+          </button>
+        </div>
+        {selectedRole === 'owner' ? <div className="account-preview"><span className="avatar">AM</span><span><small>OWNER ACCOUNT</small><b>Abena Mensah</b></span><span className="account-tag">OWNER</span></div> : <label className="cashier-picker"><span>Cashier account</span><span className="cashier-select-control"><select value={selectedCashier} onChange={event => setSelectedCashier(event.target.value)}>{cashiers.map(cashier => <option key={cashier.name} value={cashier.name}>{cashier.name} · {cashier.title}</option>)}</select><ChevronDown size={15} /></span></label>}
+        <button className="primary-button login-submit" onClick={() => onSignIn(selectedRole, selectedCashier)}><span>Continue as {selectedRole}</span><ArrowRight size={17} /></button>
+        <div className="login-disclaimer"><ShieldCheck size={15} /><p><b>Prototype sign-in</b><br />Owner and cashier screens are separate, but passwords are not connected yet. The demo shares this browser's shop data so the owner can monitor cashier sales.</p></div>
+      </div>
+      <p className="login-bottom-note">Need access? Ask the shop owner to set up your staff account.</p>
+    </section>
+  </main>;
 }
 
 function OwnerDashboard({ total, todaySales, lowStockProducts, activities, onViewSales, onViewInventory }) {
