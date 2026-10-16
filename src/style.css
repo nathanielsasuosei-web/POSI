@@ -683,3 +683,59 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .logout-button { width: 32px; min-height: 32px; padding: 0; }
   .logout-button span { display: none; }
 }
+
+/* Cashier stock assistant */
+.assistant-launch-button { min-height: 33px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 9px; border: 1px solid #dcd8ef; border-radius: 7px; color: #6f61a2; background: #f8f6ff; font-size: 8px; font-weight: 700; white-space: nowrap; }
+.assistant-launch-button:hover { border-color: #bfb4e4; color: #5b4c91; background: #f1effb; }
+.assistant-backdrop { position: fixed; z-index: 45; inset: 0; display: grid; place-items: center; padding: 20px; background: #10221bb5; backdrop-filter: blur(3px); }
+.assistant-panel { width: min(100%, 520px); height: min(680px, calc(100dvh - 40px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e5e9e5; border-radius: 16px; background: #fff; box-shadow: 0 24px 80px #071e1640; animation: modalIn .18s ease-out; }
+.assistant-header { min-height: 61px; display: flex; align-items: center; gap: 9px; padding: 12px 15px; border-bottom: 1px solid #edf1ed; }
+.assistant-brand-icon { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 10px; color: #695c9b; background: #f0edfb; }
+.assistant-title-copy { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
+.assistant-title-copy small { color: #8c82b7; font-size: 7px; font-weight: 800; letter-spacing: .9px; }
+.assistant-title-copy b { color: #33453b; font: 750 12px Manrope, sans-serif; }
+.assistant-mode { display: flex; align-items: center; gap: 5px; padding: 5px 7px; border-radius: 5px; color: #55816a; background: #eff7f1; font-size: 6.5px; font-weight: 800; letter-spacing: .6px; }
+.assistant-mode i { width: 5px; height: 5px; border-radius: 50%; background: #4cb17a; }
+.assistant-close { width: 29px; height: 29px; display: grid; place-items: center; border: 0; border-radius: 7px; color: #7c8981; background: #f4f7f4; }
+.assistant-close:hover { color: #33463b; background: #eaf1eb; }
+.assistant-subhead { min-height: 34px; display: flex; align-items: center; gap: 6px; padding: 7px 15px; color: #738277; background: #f8faf8; font-size: 7.5px; }
+.assistant-subhead svg { flex: none; color: #8072b2; }
+.assistant-messages { min-height: 0; display: flex; flex: 1; flex-direction: column; gap: 13px; overflow-y: auto; padding: 15px; scrollbar-width: thin; }
+.assistant-message { max-width: 94%; display: flex; align-items: flex-start; gap: 6px; }
+.assistant-message.user { align-self: flex-end; }
+.assistant-message-icon { width: 23px; height: 23px; flex: none; display: grid; place-items: center; margin-top: 2px; border-radius: 7px; color: #7163a4; background: #f0edfb; }
+.assistant-bubble { min-width: 0; padding: 9px 10px; border: 1px solid #e9eeea; border-radius: 4px 11px 11px 11px; color: #54635a; background: #f8faf8; }
+.assistant-message.user .assistant-bubble { border-color: #dceee1; border-radius: 11px 4px 11px 11px; color: #285b40; background: #edf7f0; }
+.assistant-bubble > p { margin: 0; font-size: 8.5px; line-height: 1.55; }
+.assistant-product { min-width: 250px; display: flex; align-items: center; gap: 8px; padding: 7px; margin-top: 8px; border: 1px solid #e6ece7; border-radius: 8px; background: #fff; }
+.assistant-product-copy { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 4px; }
+.assistant-product-copy b { overflow: hidden; color: #3b4d42; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-product-copy small { color: #6d8775; font-size: 7px; }
+.assistant-product-copy small.assistant-low-stock { color: #ad792e; }
+.assistant-add-button { min-width: 48px; min-height: 25px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 6px; border: 1px solid #dce9df; border-radius: 5px; color: #317650; background: #f8fcf9; font-size: 7px; font-weight: 700; }
+.assistant-add-button:hover:not(:disabled) { border-color: #a9ceb6; background: #eef7f0; }
+.assistant-prompts { padding: 8px 13px 2px; border-top: 1px solid #f0f2f0; }
+.assistant-prompts > span { display: block; margin: 0 0 6px 2px; color: #99a39d; font-size: 6.5px; font-weight: 800; letter-spacing: .7px; }
+.assistant-prompts > div { display: flex; gap: 6px; overflow-x: auto; padding: 1px 1px 5px; scrollbar-width: none; }
+.assistant-prompts > div::-webkit-scrollbar { display: none; }
+.assistant-prompts button { min-height: 24px; flex: none; padding: 0 8px; border: 1px solid #e7e9f0; border-radius: 15px; color: #746992; background: #fbfaff; font-size: 7px; white-space: nowrap; }
+.assistant-prompts button:hover { border-color: #c7bfe4; background: #f5f2ff; }
+.assistant-input-form { min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 4px 5px 4px 12px; margin: 5px 13px 0; border: 1px solid #e1e8e2; border-radius: 8px; background: #fff; }
+.assistant-input-form:focus-within { border-color: #a7cdb5; box-shadow: 0 0 0 3px #edf6ef; }
+.assistant-input-form input { min-width: 0; flex: 1; border: 0; outline: 0; color: #3f5146; background: transparent; font-size: 8.5px; }
+.assistant-input-form input::placeholder { color: #a0aaa4; }
+.assistant-input-form button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 7px; color: #fff; background: #6e629f; }
+.assistant-input-form button:hover:not(:disabled) { background: #5a4d8d; }
+.assistant-input-form button:disabled { background: #c8c3d9; }
+.assistant-footnote { margin: 7px 14px 11px; color: #9aa49e; font-size: 6.5px; text-align: center; }
+@media (max-width: 720px) {
+  .assistant-backdrop { align-items: end; padding: 0; }
+  .assistant-panel { width: 100%; height: min(86dvh, 720px); max-height: calc(100dvh - 10px); border-radius: 17px 17px 0 0; }
+  .assistant-messages { padding: 12px; }
+  .assistant-launch-button { min-height: 31px; padding: 0 7px; font-size: 7px; }
+}
+@media (max-width: 420px) {
+  .catalog-actions .assistant-launch-button { width: 32px; padding: 0; }
+  .catalog-actions .assistant-launch-button > span { display: none; }
+  .assistant-product { min-width: min(245px, calc(100vw - 100px)); }
+}

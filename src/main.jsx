@@ -121,6 +121,7 @@ function App() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [mobileCart, setMobileCart] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [notice, setNotice] = useState('');
   const noticeTimer = useRef(null);
@@ -180,6 +181,7 @@ function App() {
     setCart([]);
     setShowPay(false);
     setShowProductModal(false);
+    setShowAssistant(false);
     setEditingProduct(null);
     setMobileCart(false);
     setShowSuccess(false);
@@ -273,6 +275,7 @@ function App() {
   const setView = view => {
     setActiveView(view);
     setMobileCart(false);
+    setShowAssistant(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -343,7 +346,7 @@ function App() {
               <section className="workspace-card catalog-panel">
                 <div className="catalog-heading">
                   <div><h2>Product catalogue <span className="sale-dot" /></h2><p>{products.length} products in your shop</p></div>
-                  <div className="catalog-actions"><button className="outline-button" onClick={() => flash('A barcode scanner is not connected in this demo.')}><Barcode size={16} /><span>Scan</span></button><button className="primary-button compact-button" onClick={openNewProduct}><Plus size={16} /><span>Add product</span></button></div>
+                  <div className="catalog-actions">{role === 'cashier' && <button className="assistant-launch-button" onClick={() => setShowAssistant(true)}><Sparkles size={16} /><span>Stock assistant</span></button>}<button className="outline-button" onClick={() => flash('A barcode scanner is not connected in this demo.')}><Barcode size={16} /><span>Scan</span></button><button className="primary-button compact-button" onClick={openNewProduct}><Plus size={16} /><span>Add product</span></button></div>
                 </div>
                 <div className="search-line"><label className="search-box"><Search size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search name, brand or barcode…" aria-label="Search products" /><kbd>⌘ K</kbd></label><button className="filter-button" onClick={() => { setCategory('All products'); setSearch(''); }} aria-label="Clear product filters"><SlidersHorizontal size={17} /><span>Reset</span></button></div>
                 <div className="category-scroll" aria-label="Product categories"><button className={`category-chip ${category === 'All products' ? 'active' : ''}`} onClick={() => setCategory('All products')}>All products <span className="all-count">{products.length}</span></button>{categories.map(item => <button key={item} className={`category-chip ${category === item ? 'active' : ''}`} onClick={() => setCategory(item)}>{item}</button>)}</div>
@@ -376,11 +379,144 @@ function App() {
       </main>
 
       {showProductModal && <ProductFormModal key={editingProduct?.id || 'new-product'} initialProduct={editingProduct} onClose={() => { setShowProductModal(false); setEditingProduct(null); }} onSave={saveProduct} />}
+      {showAssistant && role === 'cashier' && activeView === 'Point of sale' && <StockAssistant products={products} onClose={() => setShowAssistant(false)} onAddToSale={addToCart} />}
       {showPay && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setShowPay(false); }}><div className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title"><button className="modal-close" onClick={() => setShowPay(false)} aria-label="Close payment confirmation"><X size={19} /></button><span className="modal-icon"><Wallet size={24} /></span><span className="modal-eyebrow">COMPLETE SALE</span><h2 id="checkout-title">Confirm payment</h2><p>Confirm payment from {customer.toLowerCase()} to record this transaction.</p><div className="modal-amount"><span>Amount due</span><b>{format(total)}</b></div><div className="modal-method"><span>Payment method</span><strong>{payment === 'Mobile Money' ? 'Mobile Money (MoMo)' : payment}</strong></div><button className="confirm-button" onClick={completeSale}><Check size={17} /> Confirm and record sale</button><div className="modal-secure"><ShieldCheck size={13} />The sale will appear in the owner dashboard</div></div></div>}
       {showSuccess && <div className="success-toast"><span className="success-icon"><Check size={17} /></span><span><b>Sale recorded!</b><small>Inventory and cashier activity updated.</small></span><button onClick={() => window.print()}><Printer size={16} />Receipt</button><button className="success-x" onClick={() => setShowSuccess(false)} aria-label="Dismiss"><X size={16} /></button></div>}
       {notice && <div className="toast" role="status"><CheckCircle2 size={17} />{notice}</div>}
     </div>
   );
+}
+
+const inventoryQuestionStops = new Set(['how', 'many', 'quantity', 'qty', 'stock', 'left', 'available', 'availability', 'do', 'we', 'have', 'is', 'there', 'in', 'the', 'shop', 'store', 'a', 'an', 'of', 'this', 'product', 'products', 'medicine', 'medicines', 'drug', 'drugs', 'can', 'i', 'get', 'tell', 'me', 'please', 'show', 'what', 'are', 'any', 'units', 'count', 'for', 'on', 'hand', 'and', 'with', 'at', 'price', 'much', 'each', 'it', 'that', 'those', 'these', 'find', 'check', 'got', 'some', 'got']);
+
+function normalizeInventoryQuestion(value) {
+  return value.toLowerCase()
+    .replace(/(\d+)\s+(mg|ml|mcg|g|iu|tablet|tablets|capsule|capsules)\b/g, '$1$2')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findStockMatches(question, products) {
+  const normalized = normalizeInventoryQuestion(question);
+  const tokens = [...new Set(normalized.split(' ').filter(token => token.length > 1 && !inventoryQuestionStops.has(token)))];
+  if (!tokens.length) return [];
+
+  return products.map(product => {
+    const name = normalizeInventoryQuestion(product.name || '');
+    const brand = normalizeInventoryQuestion(product.brand || '');
+    const category = normalizeInventoryQuestion(product.category || '');
+    const barcode = normalizeInventoryQuestion(product.barcode || '');
+    const nameTokens = name.split(' ');
+    const brandTokens = brand.split(' ');
+    const categoryTokens = category.split(' ');
+    let score = name && normalized.includes(name) ? 10 + nameTokens.length : 0;
+
+    for (const token of tokens) {
+      if (nameTokens.includes(token)) score += 5;
+      else if (token.length >= 5 && nameTokens.some(word => word.includes(token))) score += 2;
+      if (brandTokens.includes(token) && !nameTokens.includes(token)) score += 3;
+      if (categoryTokens.includes(token)) score += 2;
+      if (barcode && barcode.includes(token)) score += 4;
+    }
+    return { product, score };
+  }).filter(match => match.score > 0)
+    .sort((first, second) => second.score - first.score)
+    .slice(0, 4);
+}
+
+function getStockAnswer(question, products) {
+  const normalizedQuestion = normalizeInventoryQuestion(question);
+  const asksForList = /\b(what|which|show|list|all|any|how|tell)\b/.test(normalizedQuestion)
+    && (/\b(product|products|item|items|medicine|medicines|drug|drugs)\b/.test(normalizedQuestion)
+      || /\b(available|stock)\b/.test(normalizedQuestion));
+  if (asksForList) {
+    const availableProducts = products.filter(product => Number(product.stock) > 0).sort((first, second) => second.stock - first.stock);
+    const asksForCount = /\b(how many|count|number)\b/.test(normalizedQuestion)
+      && /\b(products|items|medicines|drugs)\b/.test(normalizedQuestion);
+    if (!availableProducts.length) return { text: 'There are no products currently marked in stock.', products: [] };
+    const intro = asksForCount
+      ? `There are ${availableProducts.length} product types currently in stock. Here are the available items:`
+      : 'Here are some products currently available and their on-hand quantities:';
+    return { text: intro, products: availableProducts.slice(0, 5) };
+  }
+
+  const matches = findStockMatches(question, products);
+  if (!matches.length) {
+    return { text: 'I could not match that to a product in this shop. Try a product name, brand, barcode, or category.', products: [] };
+  }
+
+  const leading = matches[0];
+  const second = matches[1];
+  const isClearMatch = !second || leading.score >= second.score + 2;
+  if (isClearMatch) {
+    const product = leading.product;
+    const answer = product.stock > 0
+      ? `Yes, ${product.name} is available. There are ${product.stock} units in stock at ${format(product.price)} each.`
+      : `No, ${product.name} is currently out of stock.`;
+    return { text: answer, products: [product] };
+  }
+  return { text: `I found a few matching products. Here is the current quantity for each:`, products: matches.map(match => match.product) };
+}
+
+function StockAssistant({ products, onClose, onAddToSale }) {
+  const [question, setQuestion] = useState('');
+  const [messages, setMessages] = useState([{
+    id: 'assistant-welcome',
+    role: 'assistant',
+    text: 'Hi! Ask me what is available or how many units are left. I can check product names, brands, and categories.',
+  }]);
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages]);
+
+  const askQuestion = value => {
+    const cleanQuestion = value.trim();
+    if (!cleanQuestion) return;
+    const answer = getStockAnswer(cleanQuestion, products);
+    const time = Date.now();
+    setMessages(previous => [
+      ...previous,
+      { id: `user-${time}`, role: 'user', text: cleanQuestion },
+      { id: `answer-${time}`, role: 'assistant', text: answer.text, products: answer.products },
+    ]);
+    setQuestion('');
+  };
+
+  const submitQuestion = event => {
+    event.preventDefault();
+    askQuestion(question);
+  };
+
+  return <div className="assistant-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="assistant-panel" role="dialog" aria-modal="true" aria-labelledby="assistant-title">
+      <header className="assistant-header">
+        <span className="assistant-brand-icon"><Sparkles size={19} /></span>
+        <span className="assistant-title-copy"><small>POSI STOCK ASSISTANT</small><b id="assistant-title">Ask about inventory</b></span>
+        <span className="assistant-mode"><i /> READY</span>
+        <button className="assistant-close" onClick={onClose} aria-label="Close stock assistant"><X size={18} /></button>
+      </header>
+      <div className="assistant-subhead"><Sparkles size={14} /><span>I check your current shop quantities and product availability.</span></div>
+      <div className="assistant-messages">
+        {messages.map(message => <div key={message.id} className={`assistant-message ${message.role}`}>
+          {message.role === 'assistant' && <span className="assistant-message-icon"><Sparkles size={13} /></span>}
+          <div className="assistant-bubble"><p>{message.text}</p>{message.products?.map(product => <div className="assistant-product" key={product.id}>
+            <ProductVisual product={product} small />
+            <span className="assistant-product-copy"><b>{product.name}</b><small className={product.stock <= 5 ? 'assistant-low-stock' : ''}>{product.stock} {product.stock === 1 ? 'unit' : 'units'} available · {format(product.price)}</small></span>
+            <button className="assistant-add-button" disabled={product.stock < 1} onClick={() => onAddToSale(product)}>{product.stock > 0 ? <><Plus size={13} />Add</> : 'Out'}</button>
+          </div>)}</div>
+        </div>)}
+        <div ref={messagesEndRef} />
+      </div>
+      <div className="assistant-prompts"><span>TRY ASKING</span><div>
+        {['How many Paracetamol are left?', 'Is Zinc available?', 'Do we have cough syrup?'].map(prompt => <button key={prompt} onClick={() => askQuestion(prompt)}>{prompt}</button>)}
+      </div></div>
+      <form className="assistant-input-form" onSubmit={submitQuestion}><input autoComplete="off" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about a product or quantity…" aria-label="Ask the stock assistant" /><button type="submit" disabled={!question.trim()} aria-label="Send question"><ArrowRight size={17} /></button></form>
+      <p className="assistant-footnote">Demo stock assistant · answers are based on the inventory saved in this browser.</p>
+    </section>
+  </div>;
 }
 
 function LoginScreen({ onSignIn }) {
