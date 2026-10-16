@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "POSI Pharmacy Operations Suite",
+  "short_name": "POSI",
+  "description": "Pharmacy sales, billing, inventory, attendance and leave tools that work offline on this device.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f5",
+  "theme_color": "#f5f7f5",
+  "icons": [
+    {
+      "src": "/posi-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
