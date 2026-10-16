@@ -22,7 +22,7 @@ Production deployments must use HTTPS (or localhost) for service workers.
 
 - **Owner workspace:** overview and cashier activity monitor, shop inventory and expiry watch, all invoices, seven-day sales reports with revenue/payment/product performance, and attendance/leave review.
 - **Cashier workspace:** point of sale, inventory, personal invoices, and attendance/leave. Cashiers can clock in/out and submit leave requests; the owner can approve or decline them.
-- **Billing:** every confirmed POS payment records a paid invoice with line items, customer, cashier, payment method, totals and invoice number. Invoices can be viewed, printed or exported to CSV; reports also export CSV.
+- **Billing:** every confirmed POS payment records a paid invoice with line items, customer, cashier, payment method, totals and invoice number. Invoices can be viewed, printed as full invoices or compact receipts, and exported to CSV; reports also export CSV.
 - **Inventory:** create products with an opening quantity, lot number and expiry date; manage multiple batches and quantities per product. Low available stock, expired lots, near-expiry lots (within 90 days), and lots missing expiry dates are flagged. Checkout allocates eligible inventory by FEFO (earliest expiry first); expired or undated stock cannot be sold.
 - **Cashier stock assistant:** matches questions against the current local inventory and reports unexpired availability. It is a local matcher, not an external AI integration.
 - **Product photos:** existing camera capture and image upload remain available on product records.

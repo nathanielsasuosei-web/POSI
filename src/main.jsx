@@ -204,6 +204,7 @@ function App() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastInvoice, setLastInvoice] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [mobileCart, setMobileCart] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
@@ -291,6 +292,7 @@ function App() {
     setEditingProduct(null);
     setBatchProduct(null);
     setSelectedInvoice(null);
+    setSelectedReceipt(null);
     setLastInvoice(null);
     setMobileCart(false);
     setShowSuccess(false);
@@ -574,10 +576,11 @@ function App() {
 
       {showProductModal && <ProductFormModal key={editingProduct?.id || 'new-product'} initialProduct={editingProduct} onClose={() => { setShowProductModal(false); setEditingProduct(null); }} onManageBatches={product => { setShowProductModal(false); setBatchProduct(product); }} onSave={saveProduct} />}
       {batchProduct && <BatchManagerModal key={batchProduct.id} product={batchProduct} onClose={() => setBatchProduct(null)} onSave={saveBatches} />}
-      {selectedInvoice && <InvoiceDetailsModal sale={selectedInvoice} onClose={() => setSelectedInvoice(null)} />}
+      {selectedInvoice && <InvoiceDetailsModal sale={selectedInvoice} onClose={() => setSelectedInvoice(null)} onPrintReceipt={sale => { setSelectedInvoice(null); setSelectedReceipt(sale); }} />}
+      {selectedReceipt && <ReceiptPrintModal sale={selectedReceipt} onClose={() => setSelectedReceipt(null)} />}
       {showAssistant && role === 'cashier' && activeView === 'Point of sale' && <StockAssistant products={products} onClose={() => setShowAssistant(false)} onAddToSale={addToCart} />}
       {showPay && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setShowPay(false); }}><div className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title"><button className="modal-close" onClick={() => setShowPay(false)} aria-label="Close payment confirmation"><X size={19} /></button><span className="modal-icon"><Wallet size={24} /></span><span className="modal-eyebrow">COMPLETE SALE</span><h2 id="checkout-title">Confirm payment</h2><p>Confirm payment from {invoiceCustomer.toLowerCase()} to record this transaction.</p><div className="modal-amount"><span>Amount due</span><b>{format(total)}</b></div><div className="modal-method"><span>Payment method</span><strong>{payment === 'Mobile Money' ? 'Mobile Money (MoMo)' : payment}</strong></div><button className="confirm-button" onClick={completeSale}><Check size={17} /> Confirm payment &amp; create invoice</button><div className="modal-secure"><ShieldCheck size={13} />The sale will appear in the owner dashboard</div></div></div>}
-      {showSuccess && <div className="success-toast"><span className="success-icon"><Check size={17} /></span><span><b>Sale invoiced!</b><small>Payment recorded · invoice {lastInvoice?.invoiceNumber}</small></span><button onClick={() => { setShowSuccess(false); setSelectedInvoice(lastInvoice); }}><FileText size={15} />Invoice</button><button className="success-x" onClick={() => setShowSuccess(false)} aria-label="Dismiss"><X size={16} /></button></div>}
+      {showSuccess && <div className="success-toast"><span className="success-icon"><Check size={17} /></span><span><b>Sale invoiced!</b><small>Payment recorded · invoice {lastInvoice?.invoiceNumber}</small></span><button onClick={() => { setShowSuccess(false); setSelectedReceipt(lastInvoice); }}><Printer size={14} />Receipt</button><button onClick={() => { setShowSuccess(false); setSelectedInvoice(lastInvoice); }}><FileText size={15} />Invoice</button><button className="success-x" onClick={() => setShowSuccess(false)} aria-label="Dismiss"><X size={16} /></button></div>}
       {notice && <div className="toast" role="status"><CheckCircle2 size={17} />{notice}</div>}
     </div>
   );
@@ -855,7 +858,7 @@ function InvoicesPage({ role, currentStaff, sales, onViewInvoice }) {
   </section>;
 }
 
-function InvoiceDetailsModal({ sale, onClose }) {
+function InvoiceDetailsModal({ sale, onClose, onPrintReceipt }) {
   const items = Array.isArray(sale.items) ? sale.items : [];
   const subtotal = Number(sale.subtotal ?? (Number(sale.total || 0) + Number(sale.discountAmount || 0)));
   const discountAmount = Number(sale.discountAmount || 0);
@@ -865,7 +868,22 @@ function InvoiceDetailsModal({ sale, onClose }) {
     <div className="invoice-parties"><div><small>BILL TO</small><b>{sale.customer || 'Walk-in customer'}</b></div><div><small>ISSUED BY</small><b>{sale.cashier}</b></div><div><small>PAYMENT</small><b>{sale.payment === 'Mobile Money' ? 'Mobile Money (MoMo)' : sale.payment}</b></div></div>
     <div className="table-scroll"><table className="invoice-line-table"><thead><tr><th>PRODUCT</th><th>QTY</th><th>UNIT PRICE</th><th>LINE TOTAL</th></tr></thead><tbody>{items.length ? items.map((item, index) => <tr key={`${item.productId || item.name}-${index}`}><td>{item.name}{item.batchLots?.length > 0 && <small className="invoice-lot-note">Lot{item.batchLots.length === 1 ? '' : 's'}: {item.batchLots.map(batch => `${batch.lotNumber} × ${batch.quantity}`).join(', ')}</small>}</td><td>{item.quantity}</td><td>{format(item.unitPrice)}</td><td>{format(item.lineTotal ?? item.quantity * item.unitPrice)}</td></tr>) : <tr><td colSpan="4" className="no-line-items">Item details were not saved for this older demo transaction.</td></tr>}</tbody></table></div>
     <div className="invoice-totals"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{discountAmount > 0 && <div><span>Discount</span><b>− {format(discountAmount)}</b></div>}<div className="invoice-grand-total"><span>Total paid</span><b>{format(sale.total)}</b></div></div>
-    <footer className="invoice-detail-footer"><span><ShieldCheck size={13} />Thank you for choosing Green Cross Pharmacy.</span><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Print invoice</button></footer>
+    <footer className="invoice-detail-footer"><span><ShieldCheck size={13} />Thank you for choosing Green Cross Pharmacy.</span><div className="invoice-detail-actions"><button className="outline-button" onClick={() => onPrintReceipt(sale)}><Printer size={14} /> Print receipt</button><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Print invoice</button></div></footer>
+  </section></div>;
+}
+
+function ReceiptPrintModal({ sale, onClose }) {
+  const items = Array.isArray(sale.items) ? sale.items : [];
+  const subtotal = Number(sale.subtotal ?? (Number(sale.total || 0) + Number(sale.discountAmount || 0)));
+  const discountAmount = Number(sale.discountAmount || 0);
+  return <div className="modal-backdrop receipt-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="receipt-paper" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+    <button className="modal-close receipt-close" onClick={onClose} aria-label="Close receipt"><X size={17} /></button>
+    <header className="receipt-brand"><span className="brand-mark"><Plus size={17} strokeWidth={3} /></span><span><b>Green Cross Pharmacy</b><small>Accra, Ghana</small></span></header>
+    <div className="receipt-heading"><span>PAYMENT RECEIPT</span><h2 id="receipt-title">{sale.invoiceNumber || sale.id.replace('POS', 'INV')}</h2><small>{readableDate(sale.date)} · {sale.time}</small></div>
+    <div className="receipt-meta"><div><span>Customer</span><b>{sale.customer || 'Walk-in customer'}</b></div><div><span>Cashier</span><b>{sale.cashier}</b></div><div><span>Payment</span><b>{sale.payment === 'Mobile Money' ? 'Mobile Money (MoMo)' : sale.payment}</b></div></div>
+    <div className="receipt-item-list">{items.length ? items.map((item, index) => <div className="receipt-item" key={`${item.productId || item.name}-${index}`}><div className="receipt-item-main"><b>{item.name}</b><strong>{format(item.lineTotal ?? item.quantity * item.unitPrice)}</strong></div><small>{item.quantity} × {format(item.unitPrice)}</small>{item.batchLots?.length > 0 && <small className="receipt-lot-note">Lot{item.batchLots.length === 1 ? '' : 's'}: {item.batchLots.map(batch => `${batch.lotNumber} × ${batch.quantity}`).join(', ')}</small>}</div>) : <p className="receipt-empty-lines">Item details were not saved for this older demo transaction.</p>}</div>
+    <div className="receipt-totals"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{discountAmount > 0 && <div><span>Discount</span><b>− {format(discountAmount)}</b></div>}<div className="receipt-grand-total"><span>Total paid</span><b>{format(sale.total)}</b></div></div>
+    <footer className="receipt-footer"><p>Thank you for choosing Green Cross Pharmacy.</p><small>Sale {sale.id} · Demo receipt</small><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Print receipt</button></footer>
   </section></div>;
 }
 

@@ -1072,4 +1072,50 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .invoice-line-table { width: 100%; margin-right: 0; margin-left: 0; }
   .invoice-detail-footer > button { display: none !important; }
   .invoice-detail-modal .modal-close { display: none !important; }
+  .receipt-backdrop, .receipt-backdrop * { visibility: visible !important; }
+  .receipt-backdrop { position: absolute; inset: 0; display: block; overflow: visible; padding: 0; background: #fff; backdrop-filter: none; }
+  .receipt-paper { width: 80mm; max-height: none; overflow: visible; margin: 0 auto; padding: 5mm; border: 0; border-radius: 0; box-shadow: none; }
+  .receipt-close, .receipt-footer button { display: none !important; }
+}
+
+/* Printable point-of-sale receipt */
+.invoice-detail-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.invoice-detail-actions .outline-button, .invoice-detail-actions .primary-button { min-height: 32px; padding: 0 9px; font-size: 7.5px; }
+.receipt-backdrop { z-index: 39; }
+.receipt-paper { position: relative; width: min(100%, 390px); max-height: min(92vh, 850px); overflow-y: auto; padding: 24px 25px 20px; border: 1px solid #e5ebe6; border-radius: 13px; color: #405247; background: #fff; box-shadow: 0 24px 75px #0a241a40; animation: modalIn .18s ease-out; }
+.receipt-brand { display: flex; align-items: center; justify-content: center; gap: 9px; padding-bottom: 14px; border-bottom: 1px dashed #dce5de; }
+.receipt-brand .brand-mark { width: 32px; height: 32px; }
+.receipt-brand > span:last-child { display: flex; flex-direction: column; gap: 3px; }
+.receipt-brand b { color: #30483a; font: 800 11px Manrope, sans-serif; }
+.receipt-brand small { color: #8b9990; font-size: 7px; }
+.receipt-heading { display: flex; align-items: center; flex-direction: column; gap: 4px; padding: 14px 0 12px; text-align: center; }
+.receipt-heading > span { color: #4a8763; font-size: 7px; font-weight: 800; letter-spacing: 1.1px; }
+.receipt-heading h2 { margin: 0; color: #263c30; font: 800 15px Manrope, sans-serif; letter-spacing: -.3px; }
+.receipt-heading small { color: #8c9991; font-size: 7px; }
+.receipt-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; padding: 11px 0; border-top: 1px dashed #dce5de; border-bottom: 1px dashed #dce5de; }
+.receipt-meta > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.receipt-meta > div:first-child { grid-column: 1 / -1; }
+.receipt-meta span { color: #96a198; font-size: 6.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .55px; }
+.receipt-meta b { overflow: hidden; color: #4c5e52; font-size: 7.5px; text-overflow: ellipsis; white-space: nowrap; }
+.receipt-item-list { display: flex; flex-direction: column; padding: 4px 0; }
+.receipt-item { padding: 9px 0; border-bottom: 1px dotted #e5ebe6; }
+.receipt-item-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.receipt-item-main b { min-width: 0; color: #3e5145; font-size: 8px; line-height: 1.4; }
+.receipt-item-main strong { color: #354b3d; font-size: 8px; white-space: nowrap; }
+.receipt-item > small { display: block; margin-top: 3px; color: #8b9990; font-size: 7px; }
+.receipt-item > .receipt-lot-note { color: #75877b; font-size: 6.5px; }
+.receipt-empty-lines { color: #8b9990; font-size: 7.5px; font-style: italic; }
+.receipt-totals { display: flex; flex-direction: column; gap: 7px; padding: 11px 0 4px; border-top: 1px dashed #dce5de; }
+.receipt-totals > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #839087; font-size: 7.5px; }
+.receipt-totals b { color: #4a5d50; }
+.receipt-totals .receipt-grand-total { padding-top: 8px; margin-top: 2px; border-top: 1px solid #e6ece7; color: #30483a; font-weight: 700; }
+.receipt-grand-total b { color: #1c704d; font: 800 13px Manrope, sans-serif; }
+.receipt-footer { display: flex; align-items: center; flex-direction: column; gap: 6px; padding-top: 13px; margin-top: 8px; border-top: 1px dashed #dce5de; text-align: center; }
+.receipt-footer p { margin: 0; color: #6f8375; font-size: 7.5px; }
+.receipt-footer small { color: #a0aaa3; font-size: 6.5px; }
+.receipt-footer .primary-button { min-height: 34px; margin-top: 5px; font-size: 8px; }
+@media (max-width: 420px) {
+  .invoice-detail-actions { width: 100%; flex-wrap: wrap; }
+  .invoice-detail-actions .outline-button, .invoice-detail-actions .primary-button { flex: 1; }
+  .receipt-paper { padding: 21px 18px 17px; }
 }
