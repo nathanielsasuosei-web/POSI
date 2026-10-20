@@ -1,1242 +1,1212 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Barcode,
-  Camera, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3,
-  BarChart3, CalendarDays, CreditCard, Download, FileText, ImagePlus,
-  LayoutDashboard, LogOut, Minus, Package, PackagePlus, Pill, Plus, Printer,
-  Search, ShieldCheck, ShoppingBag, ShoppingCart,
-  SlidersHorizontal, Sparkles, TrendingUp, UserRound, Users, Wallet, X,
+  LayoutDashboard, ShoppingCart, Package, Users, FileText, BarChart3, Gift, MessageSquare,
+  Wallet, CreditCard, Banknote, Smartphone, Receipt, Ticket, UserCircle,
+  Search, Plus, Minus, X, Check, LogOut, Store, Clock3, TrendingUp, AlertTriangle,
+  ArrowRight, ChevronDown, Download, Printer, ShieldCheck, CalendarDays, UserRound,
+  CheckCircle2, DollarSign, PiggyBank, Landmark, Mail, Send, Eye, Edit2, Trash2, UserPlus
 } from 'lucide-react';
 import './style.css';
 
-const PRODUCT_STORAGE_KEY = 'posi-v2-products';
-const SALES_STORAGE_KEY = 'posi-v2-sales';
-const ACTIVITY_STORAGE_KEY = 'posi-v2-activity';
-const ATTENDANCE_STORAGE_KEY = 'posi-v1-attendance';
-const LEAVE_STORAGE_KEY = 'posi-v1-leave-requests';
-const categories = ['Pain relief', 'Vitamins', 'Allergy', 'Cold & flu', 'Antibiotics', 'First aid', 'Digestive', 'Personal care', 'Other'];
-const format = amount => `GH₵ ${Number(amount || 0).toFixed(2)}`;
-const readSessionValue = key => {
-  try {
-    return window.sessionStorage.getItem(key);
-  } catch {
-    return null;
-  }
+// Storage keys
+const K = {
+  products: 'posi-v3-products',
+  sales: 'posi-v3-sales',
+  customers: 'posi-v3-customers',
+  employees: 'posi-v3-employees',
+  giftCards: 'posi-v3-giftcards',
+  messages: 'posi-v3-messages',
+  activities: 'posi-v3-activities',
+  attendance: 'posi-v3-attendance',
 };
-const readSessionRole = () => {
-  const role = readSessionValue('posi-session-role');
-  return role === 'owner' || role === 'cashier' ? role : null;
-};
-const localDateKey = (date = new Date()) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-const shortTime = date => date.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' });
-const clockTime = date => date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-const dateAfterDays = days => { const date = new Date(); date.setDate(date.getDate() + days); return localDateKey(date); };
-const readableDate = value => value ? new Date(`${value}T12:00:00`).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-const displayDate = date => date.toLocaleDateString('en-GH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-function normalizeExpiryDate(value) {
-  if (!value) return '';
-  if (/^\d{4}-\d{2}$/.test(value)) {
-    const [year, month] = value.split('-').map(Number);
-    const lastDay = new Date(year, month, 0).getDate();
-    return `${value}-${String(lastDay).padStart(2, '0')}`;
-  }
-  return value;
-}
+// helpers
+const format = (n) => `GH₵ ${Number(n || 0).toFixed(2)}`;
+const todayKey = () => new Date().toISOString().slice(0,10);
+const shortTime = (d=new Date()) => d.toLocaleTimeString('en-GH',{hour:'2-digit',minute:'2-digit'});
+const readableDate = (v) => v ? new Date(v+'T12:00:00').toLocaleDateString('en-GH',{day:'numeric',month:'short',year:'numeric'}) : '—';
+const fullDate = (d=new Date()) => d.toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+const uid = (p='id') => `${p}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+const initials = (name) => name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
 
-function getProductBatches(product) {
-  if (Array.isArray(product.batches) && product.batches.length) {
-    return product.batches.map((batch, index) => ({
-      ...batch,
-      id: batch.id || `batch-${product.id}-${index}`,
-      lotNumber: batch.lotNumber || product.batchNumber || `LOT-${String(product.id).slice(-6)}-${index + 1}`,
-      stock: Math.max(0, Number(batch.stock || 0)),
-      expiry: normalizeExpiryDate(batch.expiry || product.expiry),
-    }));
-  }
-  return [{ id: `legacy-${product.id}`, lotNumber: product.batchNumber || `LOT-${String(product.id).slice(-6)}`, stock: Math.max(0, Number(product.stock || 0)), expiry: normalizeExpiryDate(product.expiry) }];
-}
-
-function getPhysicalStock(product) {
-  return getProductBatches(product).reduce((sum, batch) => sum + Number(batch.stock || 0), 0);
-}
-
-function getAvailableStock(product, today = localDateKey()) {
-  return getProductBatches(product).filter(batch => batch.expiry && batch.expiry >= today).reduce((sum, batch) => sum + Number(batch.stock || 0), 0);
-}
-
-function getExpiryAlerts(products, withinDays = 90) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayKey = localDateKey(today);
-  return products.flatMap(product => getProductBatches(product).filter(batch => Number(batch.stock) > 0).map(batch => {
-    const missing = !batch.expiry;
-    const expiryDate = missing ? null : new Date(`${batch.expiry}T00:00:00`);
-    const days = missing ? null : Math.ceil((expiryDate - today) / 86400000);
-    const expired = !missing && batch.expiry < todayKey;
-    return { product, batch, days, expired, missing };
-  }).filter(alert => alert.missing || alert.expired || alert.days <= withinDays))
-    .sort((first, second) => {
-      const priority = alert => alert.expired ? -1_000_000 : alert.missing ? -500_000 : alert.days;
-      return priority(first) - priority(second);
-    });
-}
-
-function allocateStockFromBatches(product, quantity) {
-  const batches = getProductBatches(product).sort((first, second) => (first.expiry || '9999-12-31').localeCompare(second.expiry || '9999-12-31'));
-  let remaining = quantity;
-  const allocations = [];
-  const nextBatches = batches.map(batch => {
-    if (remaining <= 0 || !batch.expiry || batch.expiry < localDateKey()) return batch;
-    const taken = Math.min(remaining, batch.stock);
-    remaining -= taken;
-    if (taken > 0) allocations.push({ lotNumber: batch.lotNumber, quantity: taken, expiry: batch.expiry });
-    return { ...batch, stock: batch.stock - taken };
-  });
-  return { batches: nextBatches, allocations };
-}
+const categories = ['All','Groceries','Beverages','Snacks','Household','Electronics','Beauty','Health','Other'];
+const paymentMethods = [
+  { id:'Cash', label:'Cash', icon: Banknote, desc:'Cash payment' },
+  { id:'MoMo', label:'MoMo', icon: Smartphone, desc:'Mobile Money' },
+  { id:'Check', label:'Check', icon: Landmark, desc:'Bank check' },
+  { id:'Gift', label:'Gift', icon: Gift, desc:'Gift card' },
+  { id:'Account', label:'Account', icon: UserCircle, desc:'On account' },
+];
 
 const starterProducts = [
-  { id: 'sample-1', name: 'Paracetamol 500mg', brand: 'Paracetamol · 20 tablets', price: 12.5, stock: 48, category: 'Pain relief', color: 'mint', icon: 'pill', batchNumber: 'PCM-26-A', expiry: '2027-11-30', barcode: '', rx: false },
-  { id: 'sample-2', name: 'Vitamin C 1000mg', brand: 'NutriLife · 30 tablets', price: 38, stock: 24, category: 'Vitamins', color: 'peach', icon: 'sun', batchNumber: 'VTC-26-B', expiry: '2027-08-31', barcode: '', rx: false },
-  { id: 'sample-3', name: 'Cetirizine 10mg', brand: 'AllerFree · 10 tablets', price: 18, stock: 6, category: 'Allergy', color: 'lavender', icon: 'drop', batchNumber: 'CTZ-26-C', expiry: '2026-12-31', barcode: '', rx: false },
-  { id: 'sample-4', name: 'Amoxicillin 500mg', brand: 'AmoxiCare · 21 capsules', price: 42, stock: 15, category: 'Antibiotics', color: 'blue', icon: 'capsule', batchNumber: 'AMX-26-A', expiry: '2027-06-30', barcode: '', rx: true },
-  { id: 'sample-5', name: 'Ibuprofen 400mg', brand: 'IbuRelief · 20 tablets', price: 16, stock: 32, category: 'Pain relief', color: 'peach', icon: 'pill', batchNumber: 'IBU-26-B', expiry: '2028-03-31', barcode: '', rx: false },
-  { id: 'sample-6', name: 'Zinc 20mg', brand: 'Wellness+ · 30 tablets', price: 27.5, stock: 3, category: 'Vitamins', color: 'mint', icon: 'sun', batchNumber: 'ZN-26-A', expiry: '2026-11-30', barcode: '', rx: false },
-  { id: 'sample-7', name: 'Cough Syrup', brand: 'Tussin · 100ml', price: 32, stock: 18, category: 'Cold & flu', color: 'blue', icon: 'bottle', batchNumber: 'CS-26-C', expiry: '2027-12-31', barcode: '', rx: false },
-  { id: 'sample-8', name: 'ORS Sachets', brand: 'Rehydra · 4 sachets', price: 8, stock: 57, category: 'First aid', color: 'lavender', icon: 'plus', batchNumber: 'ORS-26-A', expiry: '2028-05-31', barcode: '', rx: false },
-  { id: 'sample-9', name: 'Omeprazole 20mg', brand: 'Omez · 14 capsules', price: 25, stock: 21, category: 'Digestive', color: 'peach', icon: 'capsule', batchNumber: 'OMZ-26-B', expiry: '2027-07-31', barcode: '', rx: false },
-  { id: 'sample-10', name: 'Hand Sanitizer', brand: 'PureGuard · 250ml', price: 22, stock: 12, category: 'Personal care', color: 'mint', icon: 'drop', batchNumber: 'HG-26-A', expiry: '2028-02-28', barcode: '', rx: false },
-  { id: 'sample-11', name: 'Loratadine 10mg', brand: 'Clarity · 10 tablets', price: 20, stock: 8, category: 'Allergy', color: 'lavender', icon: 'pill', batchNumber: 'LOR-26-B', expiry: '2027-10-31', barcode: '', rx: false },
-  { id: 'sample-12', name: 'Multivitamin', brand: 'DailyCare · 30 tablets', price: 55, stock: 19, category: 'Vitamins', color: 'blue', icon: 'sun', batchNumber: 'MV-26-C', expiry: '2028-04-30', barcode: '', rx: false },
+  { id:'p1', name:'Jasmine Rice 5kg', sku:'RICE-5KG', category:'Groceries', price:85, cost:68, stock:42, barcode:'890123', color:'mint', brand:'Royal Farms' },
+  { id:'p2', name:'Cooking Oil 2L', sku:'OIL-2L', category:'Groceries', price:62, cost:48, stock:28, barcode:'890124', color:'peach', brand:'Frytol' },
+  { id:'p3', name:'Coca Cola 1.5L', sku:'COKE-1.5', category:'Beverages', price:12, cost:8.5, stock:64, barcode:'890125', color:'blue', brand:'Coca Cola' },
+  { id:'p4', name:'Milo 400g', sku:'MILO-400', category:'Beverages', price:38, cost:29, stock:19, barcode:'890126', color:'peach', brand:'Nestle' },
+  { id:'p5', name:'Indomie Pack', sku:'NOODLE-PK', category:'Snacks', price:45, cost:36, stock:7, barcode:'890127', color:'violet', brand:'Indomie' },
+  { id:'p6', name:'Detergent Powder 1kg', sku:'DET-1KG', category:'Household', price:28, cost:19, stock:33, barcode:'890128', color:'blue', brand:'OMO' },
+  { id:'p7', name:'Toothpaste 120g', sku:'TOOTH-120', category:'Beauty', price:18, cost:11, stock:51, barcode:'890129', color:'mint', brand:'Pepsodent' },
+  { id:'p8', name:'USB Cable Type-C', sku:'USB-C', category:'Electronics', price:35, cost:18, stock:22, barcode:'890130', color:'violet', brand:'Oraimo' },
+  { id:'p9', name:'Paracetamol 500mg', sku:'PARA-20', category:'Health', price:12.5, cost:7, stock:48, barcode:'890131', color:'mint', brand:'20 tablets' },
+  { id:'p10', name:'Biscuit Digestive', sku:'BISC-DIG', category:'Snacks', price:8, cost:5, stock:3, barcode:'890132', color:'peach', brand:'McVities' },
+  { id:'p11', name:'Water 500ml x12', sku:'WATER-12', category:'Beverages', price:24, cost:16, stock:60, barcode:'890133', color:'blue', brand:'Voltic' },
+  { id:'p12', name:'Soap Bar 5pk', sku:'SOAP-5', category:'Household', price:32, cost:22, stock:15, barcode:'890134', color:'mint', brand:'Geisha' },
 ];
 
-const makeStarterSales = () => {
-  const today = localDateKey();
-  const line = (productId, name, quantity, unitPrice) => ({ productId, name, quantity, unitPrice, lineTotal: quantity * unitPrice });
-  return [
-    { id: 'POS-02487', invoiceNumber: 'INV-02487', date: today, time: '10:42', cashier: 'Ama Boateng', customer: 'Walk-in customer', total: 156.5, subtotal: 156.5, discountAmount: 0, itemCount: 6, payment: 'Cash', items: [line('sample-1', 'Paracetamol 500mg', 1, 12.5), line('sample-2', 'Vitamin C 1000mg', 2, 38), line('sample-4', 'Amoxicillin 500mg', 1, 42), line('sample-3', 'Cetirizine 10mg', 1, 18), line('sample-8', 'ORS Sachets', 1, 8)] },
-    { id: 'POS-02486', invoiceNumber: 'INV-02486', date: today, time: '10:31', cashier: 'Kwame Owusu', customer: 'Akosua Boateng', total: 86.5, subtotal: 86.5, discountAmount: 0, itemCount: 3, payment: 'Mobile Money', items: [line('sample-1', 'Paracetamol 500mg', 1, 12.5), line('sample-4', 'Amoxicillin 500mg', 1, 42), line('sample-7', 'Cough Syrup', 1, 32)] },
-    { id: 'POS-02485', invoiceNumber: 'INV-02485', date: today, time: '09:55', cashier: 'Ama Boateng', customer: 'Walk-in customer', total: 56, subtotal: 56, discountAmount: 0, itemCount: 2, payment: 'Card', items: [line('sample-2', 'Vitamin C 1000mg', 1, 38), line('sample-3', 'Cetirizine 10mg', 1, 18)] },
-    { id: 'POS-02484', invoiceNumber: 'INV-02484', date: today, time: '09:18', cashier: 'Kwame Owusu', customer: 'Walk-in customer', total: 42, subtotal: 42, discountAmount: 0, itemCount: 1, payment: 'Cash', items: [line('sample-4', 'Amoxicillin 500mg', 1, 42)] },
-  ];
-};
-const starterActivity = [
-  { id: 'activity-demo-1', type: 'sale', title: 'Ama Boateng completed a sale', detail: 'GH₵ 156.50 · Cash', time: '10:42' },
-  { id: 'activity-demo-2', type: 'sale', title: 'Kwame Owusu completed a sale', detail: 'GH₵ 86.50 · Mobile Money', time: '10:31' },
-  { id: 'activity-demo-3', type: 'product', title: 'Ama Boateng added a product', detail: 'Vitamin C 1000mg · 18 units', time: '10:08' },
-  { id: 'activity-demo-4', type: 'sale', title: 'Kwame Owusu completed a sale', detail: 'GH₵ 42.00 · Cash', time: '09:18' },
+const starterCustomers = [
+  { id:'c1', name:'Walk-in customer', phone:'', email:'', address:'', balance:0, totalSpent:0, visits:0, isWalkIn:true },
+  { id:'c2', name:'Akosua Boateng', phone:'0244123456', email:'akosua@example.com', address:'East Legon, Accra', balance:120, totalSpent:1250, visits:18 },
+  { id:'c3', name:'Kwame Asare', phone:'0207654321', email:'kwame@example.com', address:'Spintex, Accra', balance:0, totalSpent:890, visits:12 },
+  { id:'c4', name:'Ama Serwaa', phone:'0551234567', email:'ama@example.com', address:'Tema', balance:250, totalSpent:2100, visits:24 },
+  { id:'c5', name:'Joseph Mensah', phone:'0249988776', email:'joseph@example.com', address:'Madina, Accra', balance:45.5, totalSpent:560, visits:8 },
 ];
-const cashiers = [
-  { name: 'Ama Boateng', initials: 'AB', title: 'Cashier', shift: '08:00 – 16:00', status: 'On shift' },
-  { name: 'Kwame Owusu', initials: 'KO', title: 'Senior cashier', shift: '09:00 – 17:00', status: 'On shift' },
-];
-const makeStarterAttendance = () => {
-  const today = localDateKey();
-  return [
-    { id: `attendance-${today}-ama`, staff: 'Ama Boateng', date: today, clockIn: '08:02', clockOut: '', status: 'On shift' },
-    { id: `attendance-${today}-kwame`, staff: 'Kwame Owusu', date: today, clockIn: '09:06', clockOut: '', status: 'On shift' },
-  ];
-};
-const makeStarterLeaveRequests = () => [{
-  id: 'leave-demo-001', staff: 'Kwame Owusu', type: 'Personal leave', startDate: dateAfterDays(4), endDate: dateAfterDays(5), reason: 'Family appointment', status: 'Pending', submittedDate: localDateKey(),
-}];
 
-function usePersistentState(key, initialValue) {
-  const [value, setValue] = useState(() => {
-    try {
-      const stored = window.localStorage.getItem(key);
-      return stored ? JSON.parse(stored) : initialValue;
-    } catch {
-      return initialValue;
-    }
+const starterEmployees = [
+  { id:'e1', name:'Abena Mensah', role:'owner', phone:'0244000001', email:'owner@shop.com', shift:'08:00-17:00', status:'On shift', salary:0, initials:'AM' },
+  { id:'e2', name:'Ama Boateng', role:'cashier', phone:'0244000002', email:'ama@shop.com', shift:'08:00-16:00', status:'On shift', salary:1800, initials:'AB' },
+  { id:'e3', name:'Kwame Owusu', role:'cashier', phone:'0244000003', email:'kwame@shop.com', shift:'09:00-17:00', status:'On shift', salary:1700, initials:'KO' },
+];
+
+const starterGiftCards = [
+  { id:'g1', code:'GIFT-100-001', balance:100, original:100, customerId:'c2', customerName:'Akosua Boateng', expiry:'2026-12-31', status:'active' },
+  { id:'g2', code:'GIFT-50-002', balance:25.5, original:50, customerId:'c4', customerName:'Ama Serwaa', expiry:'2026-11-30', status:'active' },
+  { id:'g3', code:'GIFT-200-003', balance:200, original:200, customerId:'', customerName:'', expiry:'2027-01-15', status:'active' },
+];
+
+const starterSales = [
+  { id:'POS-02487', invoiceNumber:'INV-02487', date:todayKey(), time:'10:42', cashier:'Ama Boateng', cashierId:'e2', customerId:'c1', customerName:'Walk-in customer', items:[{productId:'p1',name:'Jasmine Rice 5kg',qty:1,unitPrice:85,lineTotal:85},{productId:'p3',name:'Coca Cola 1.5L',qty:2,unitPrice:12,lineTotal:24}], subtotal:109, discount:0, tax:0, total:109, payment:'Cash', paymentDetail:{}, itemCount:3, status:'paid' },
+  { id:'POS-02486', invoiceNumber:'INV-02486', date:todayKey(), time:'10:31', cashier:'Kwame Owusu', cashierId:'e3', customerId:'c2', customerName:'Akosua Boateng', items:[{productId:'p4',name:'Milo 400g',qty:1,unitPrice:38,lineTotal:38},{productId:'p7',name:'Toothpaste 120g',qty:2,unitPrice:18,lineTotal:36}], subtotal:74, discount:0, tax:0, total:74, payment:'MoMo', paymentDetail:{phone:'0244123456', txn:'MOMO-123456'}, itemCount:3, status:'paid' },
+  { id:'POS-02485', invoiceNumber:'INV-02485', date:todayKey(), time:'09:55', cashier:'Ama Boateng', cashierId:'e2', customerId:'c4', customerName:'Ama Serwaa', items:[{productId:'p2',name:'Cooking Oil 2L',qty:1,unitPrice:62,lineTotal:62}], subtotal:62, discount:6.2, tax:0, total:55.8, payment:'Account', paymentDetail:{}, itemCount:1, status:'paid' },
+  { id:'POS-02484', invoiceNumber:'INV-02484', date:todayKey(), time:'09:18', cashier:'Kwame Owusu', cashierId:'e3', customerId:'c3', customerName:'Kwame Asare', items:[{productId:'p8',name:'USB Cable Type-C',qty:1,unitPrice:35,lineTotal:35}], subtotal:35, discount:0, tax:0, total:35, payment:'Gift', paymentDetail:{code:'GIFT-50-002', used:35}, itemCount:1, status:'paid' },
+];
+
+const starterMessages = [
+  { id:'m1', from:'Abena Mensah', fromId:'e1', to:'all', toName:'All Staff', subject:'Morning briefing', body:'Please ensure shelves are restocked before 9am. New rice shipment arrived. Check expiry dates.', date:todayKey(), time:'08:15', readBy:[] },
+  { id:'m2', from:'Abena Mensah', fromId:'e1', to:'e2', toName:'Ama Boateng', subject:'Customer follow-up', body:'Akosua Boateng has pending account balance GH₵120. Please remind her on next visit.', date:todayKey(), time:'09:00', readBy:[] },
+];
+
+function usePersistent(key, initial){
+  const [val,setVal]=useState(()=>{
+    try{ const s=localStorage.getItem(key); return s?JSON.parse(s):initial }catch{ return initial }
   });
-  const [saveError, setSaveError] = useState('');
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-      setSaveError('');
-    } catch {
-      setSaveError('This browser is running low on storage. Try removing a product photo.');
-    }
-  }, [key, value]);
-  return [value, setValue, saveError];
+  useEffect(()=>{ try{ localStorage.setItem(key, JSON.stringify(val)) }catch{} },[key,val]);
+  return [val,setVal];
 }
 
-function ProductVisual({ product, small = false }) {
-  const Icon = product.icon === 'bottle' ? Activity : product.icon === 'drop' ? Sparkles : product.icon === 'plus' ? Plus : product.icon === 'sun' ? Sparkles : Pill;
-  return (
-    <div className={`product-visual ${product.color || 'mint'} ${small ? 'product-visual-small' : ''}`}>
-      {product.image ? <img src={product.image} alt={`${product.name} product`} /> : <>
-        <Icon size={small ? 20 : 25} strokeWidth={1.65} />
-        <span>{product.icon === 'bottle' ? '100ml' : product.icon === 'plus' ? 'ORS' : 'Rx'}</span>
-      </>}
-    </div>
-  );
-}
+function App(){
+  const [products,setProducts]=usePersistent(K.products, starterProducts);
+  const [sales,setSales]=usePersistent(K.sales, starterSales);
+  const [customers,setCustomers]=usePersistent(K.customers, starterCustomers);
+  const [employees,setEmployees]=usePersistent(K.employees, starterEmployees);
+  const [giftCards,setGiftCards]=usePersistent(K.giftCards, starterGiftCards);
+  const [messages,setMessages]=usePersistent(K.messages, starterMessages);
+  const [activities,setActivities]=usePersistent(K.activities, [
+    {id:'a1',type:'sale',title:'Ama Boateng completed a sale',detail:'GH₵ 109 · Cash',time:'10:42'},
+    {id:'a2',type:'sale',title:'Kwame Owusu completed a sale',detail:'GH₵ 74 · MoMo',time:'10:31'},
+  ]);
+  const [attendance]=usePersistent(K.attendance, []);
 
-function App() {
-  const [products, setProducts, productSaveError] = usePersistentState(PRODUCT_STORAGE_KEY, starterProducts);
-  const [sales, setSales, salesSaveError] = usePersistentState(SALES_STORAGE_KEY, makeStarterSales());
-  const [activities, setActivities, activitySaveError] = usePersistentState(ACTIVITY_STORAGE_KEY, starterActivity);
-  const [attendance, setAttendance, attendanceSaveError] = usePersistentState(ATTENDANCE_STORAGE_KEY, makeStarterAttendance());
-  const [leaveRequests, setLeaveRequests, leaveSaveError] = usePersistentState(LEAVE_STORAGE_KEY, makeStarterLeaveRequests());
-  const [role, setRole] = useState(readSessionRole);
-  const [cashierName, setCashierName] = useState(() => readSessionValue('posi-session-cashier') || cashiers[0].name);
-  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
-  const [activeView, setActiveView] = useState(() => readSessionRole() === 'cashier' ? 'Point of sale' : 'Dashboard');
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All products');
-  const [inventorySearch, setInventorySearch] = useState('');
-  const [inventoryCategory, setInventoryCategory] = useState('All products');
-  const [cart, setCart] = useState([]);
-  const [payment, setPayment] = useState('Cash');
-  const [customer, setCustomer] = useState('Walk-in customer');
-  const [customCustomer, setCustomCustomer] = useState('');
-  const [discount, setDiscount] = useState(false);
-  const [showPay, setShowPay] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [lastInvoice, setLastInvoice] = useState(null);
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [selectedReceipt, setSelectedReceipt] = useState(null);
-  const [mobileCart, setMobileCart] = useState(false);
-  const [showProductModal, setShowProductModal] = useState(false);
-  const [showAssistant, setShowAssistant] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [batchProduct, setBatchProduct] = useState(null);
-  const [notice, setNotice] = useState('');
-  const noticeTimer = useRef(null);
+  const [role,setRole]=useState(()=>{ try{ return sessionStorage.getItem('pos-role')||null }catch{return null}});
+  const [cashierId,setCashierId]=useState(()=>{ try{ return sessionStorage.getItem('pos-cashier')||'e2' }catch{return 'e2'}});
+  const [view,setView]=useState(()=> role==='owner'?'dashboard':'pos');
+  const [toast,setToast]=useState('');
+  const [success,setSuccess]=useState(null);
+  const [online,setOnline]=useState(typeof navigator!=='undefined'?navigator.onLine:true);
 
-  const currentStaff = role === 'owner'
-    ? { name: 'Abena Mensah', initials: 'AM', title: 'Store owner' }
-    : cashiers.find(cashier => cashier.name === cashierName) || cashiers[0];
-  const currentDate = new Date();
-  const todayKey = localDateKey(currentDate);
-  const todaySales = useMemo(() => sales.filter(sale => sale.date === todayKey), [sales, todayKey]);
-  const todayTotal = todaySales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
-  const lowStockProducts = products.filter(product => getAvailableStock(product) <= 5).map(product => ({ ...product, stock: getAvailableStock(product) }));
-  const expiryAlerts = getExpiryAlerts(products);
-  const invoiceCustomer = customer === 'New customer' ? customCustomer.trim() || 'New customer' : customer;
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-  const total = subtotal * (discount ? 0.9 : 1);
-  const itemCount = cart.reduce((sum, item) => sum + item.qty, 0);
-  const visibleProducts = useMemo(() => products.filter(product => {
-    const matchesCategory = category === 'All products' || product.category === category;
-    const searchText = `${product.name} ${product.brand || ''} ${product.category || ''} ${product.barcode || ''}`.toLowerCase();
-    return matchesCategory && searchText.includes(search.toLowerCase().trim());
-  }).map(product => ({ ...product, batches: getProductBatches(product), stock: getAvailableStock(product, todayKey) })), [products, category, search, todayKey]);
-  const visibleInventory = useMemo(() => products.filter(product => {
-    const matchesCategory = inventoryCategory === 'All products' || product.category === inventoryCategory;
-    const lots = getProductBatches(product).map(batch => batch.lotNumber || '').join(' ');
-    const searchText = `${product.name} ${product.brand || ''} ${product.category || ''} ${product.barcode || ''} ${lots}`.toLowerCase();
-    return matchesCategory && searchText.includes(inventorySearch.toLowerCase().trim());
-  }).map(product => ({ ...product, batches: getProductBatches(product), stock: getAvailableStock(product, todayKey) })), [products, inventoryCategory, inventorySearch, todayKey]);
-  const storageError = productSaveError || salesSaveError || activitySaveError || attendanceSaveError || leaveSaveError;
+  // POS state
+  const [search,setSearch]=useState('');
+  const [cat,setCat]=useState('All');
+  const [cart,setCart]=useState([]);
+  const [selectedCustomerId,setSelectedCustomerId]=useState('c1');
+  const [discountOn,setDiscountOn]=useState(false);
+  const [showPay,setShowPay]=useState(false);
+  const [selectedInvoice,setSelectedInvoice]=useState(null);
+  const [selectedReceipt,setSelectedReceipt]=useState(null);
+  const [mobileCart,setMobileCart]=useState(false);
 
-  useEffect(() => {
-    const updateConnection = () => setIsOnline(navigator.onLine);
-    window.addEventListener('online', updateConnection);
-    window.addEventListener('offline', updateConnection);
-    if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/service-worker.js').catch(() => {
-        // Local storage keeps the demo usable even if browser caching is unavailable.
-      });
+  // modals
+  const [showProductModal,setShowProductModal]=useState(false);
+  const [editingProduct,setEditingProduct]=useState(null);
+  const [showCustomerModal,setShowCustomerModal]=useState(false);
+  const [editingCustomer,setEditingCustomer]=useState(null);
+  const [showEmployeeModal,setShowEmployeeModal]=useState(false);
+  const [editingEmployee,setEditingEmployee]=useState(null);
+  const [showGiftModal,setShowGiftModal]=useState(false);
+  const [showMessageModal,setShowMessageModal]=useState(false);
+  const [filterSales,setFilterSales]=useState({search:'',payment:'All',date:'All'});
+
+  const currentEmployee = employees.find(e=>e.id===cashierId) || employees.find(e=>e.role==='cashier') || employees[0];
+  const currentUser = role==='owner' ? employees.find(e=>e.role==='owner') : currentEmployee;
+  const isOwner = role==='owner';
+
+  useEffect(()=>{
+    const on=()=>setOnline(navigator.onLine);
+    window.addEventListener('online',on); window.addEventListener('offline',on);
+    return ()=>{window.removeEventListener('online',on);window.removeEventListener('offline',on)}
+  },[]);
+  useEffect(()=>{ if(toast){ const t=setTimeout(()=>setToast(''),2800); return ()=>clearTimeout(t)} },[toast]);
+  useEffect(()=>{ if(success){ const t=setTimeout(()=>setSuccess(null),6000); return ()=>clearTimeout(t)} },[success]);
+
+  const flash = (m)=>setToast(m);
+
+  const signIn = (r,cId)=>{
+    try{ sessionStorage.setItem('pos-role',r); sessionStorage.setItem('pos-cashier',cId||'e2') }catch{}
+    setRole(r); setCashierId(cId||'e2'); setView(r==='owner'?'dashboard':'pos');
+  };
+  const signOut = ()=>{
+    try{ sessionStorage.removeItem('pos-role'); sessionStorage.removeItem('pos-cashier') }catch{}
+    setRole(null); setCart([]); setView('dashboard');
+  };
+
+  const addActivity = (a)=> setActivities(p=>[{id:uid('act'),...a,time:shortTime()},...p].slice(0,40));
+
+  // Products
+  const saveProduct = (prod)=>{
+    if(editingProduct){
+      setProducts(p=>p.map(x=>x.id===prod.id?prod:x));
+      addActivity({type:'product',title:`${currentUser?.name} updated product`,detail:prod.name});
+      flash(`${prod.name} updated`);
+    }else{
+      setProducts(p=>[prod,...p]);
+      addActivity({type:'product',title:`${currentUser?.name} added product`,detail:`${prod.name} · ${prod.stock} units`});
+      flash(`${prod.name} added to inventory`);
     }
-    return () => {
-      window.removeEventListener('online', updateConnection);
-      window.removeEventListener('offline', updateConnection);
-    };
-  }, []);
-
-  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
-
-  const flash = message => {
-    setNotice(message);
-    window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => setNotice(''), 2600);
+    setShowProductModal(false); setEditingProduct(null);
+  };
+  const deleteProduct = (id)=>{
+    if(!isOwner){ flash('Only owner can delete products'); return }
+    setProducts(p=>p.filter(x=>x.id!==id));
+    flash('Product removed');
   };
 
-  const signIn = (nextRole, nextCashier = cashiers[0].name) => {
-    try {
-      window.sessionStorage.setItem('posi-session-role', nextRole);
-      window.sessionStorage.setItem('posi-session-cashier', nextCashier);
-    } catch {
-      // The demo can still be used if session storage is unavailable.
+  // Customers
+  const saveCustomer = (cust)=>{
+    if(editingCustomer){
+      setCustomers(cs=>cs.map(c=>c.id===cust.id?cust:c));
+      flash(`${cust.name} updated`);
+    }else{
+      setCustomers(cs=>[cust,...cs]);
+      flash(`${cust.name} added`);
     }
-    setRole(nextRole);
-    setCashierName(nextCashier);
-    setActiveView(nextRole === 'owner' ? 'Dashboard' : 'Point of sale');
+    setShowCustomerModal(false); setEditingCustomer(null);
   };
-
-  const signOut = () => {
-    try {
-      window.sessionStorage.removeItem('posi-session-role');
-      window.sessionStorage.removeItem('posi-session-cashier');
-    } catch {
-      // Sign out still clears the in-memory demo session.
-    }
-    setRole(null);
-    setActiveView('Dashboard');
-    setCart([]);
-    setCustomer('Walk-in customer');
-    setCustomCustomer('');
-    setShowPay(false);
-    setShowProductModal(false);
-    setShowAssistant(false);
-    setEditingProduct(null);
-    setBatchProduct(null);
-    setSelectedInvoice(null);
-    setSelectedReceipt(null);
-    setLastInvoice(null);
-    setMobileCart(false);
-    setShowSuccess(false);
-  };
-
-  const addActivity = activity => {
-    setActivities(previous => [{ id: `activity-${Date.now()}`, ...activity }, ...previous].slice(0, 30));
-  };
-
-  const openNewProduct = () => {
-    setEditingProduct(null);
-    setShowProductModal(true);
-  };
-
-  const saveProduct = product => {
-    const isEditing = Boolean(editingProduct);
-    if (isEditing) {
-      setProducts(previous => previous.map(item => item.id === product.id ? product : item));
-      addActivity({ type: 'product', title: `${currentStaff.name} updated a product`, detail: product.name, time: shortTime(new Date()) });
-      flash(`${product.name} updated in inventory.`);
-    } else {
-      setProducts(previous => [product, ...previous]);
-      addActivity({ type: 'product', title: `${currentStaff.name} added a product`, detail: `${product.name} · ${product.stock} units`, time: shortTime(new Date()) });
-      flash(`${product.name} saved to inventory.`);
-    }
-    setShowProductModal(false);
-    setEditingProduct(null);
-  };
-
-  const saveBatches = batches => {
-    if (!batchProduct) return;
-    const totalStock = batches.reduce((sum, batch) => sum + Number(batch.stock || 0), 0);
-    const sorted = [...batches].sort((first, second) => (first.expiry || '9999-12-31').localeCompare(second.expiry || '9999-12-31'));
-    setProducts(previous => previous.map(product => product.id === batchProduct.id ? {
-      ...product,
-      batches,
-      stock: totalStock,
-      batchNumber: sorted[0]?.lotNumber || '',
-      expiry: sorted[0]?.expiry || '',
-    } : product));
-    addActivity({ type: 'stock', title: `${currentStaff.name} updated batch stock`, detail: `${batchProduct.name} · ${totalStock} units`, time: shortTime(new Date()) });
-    flash(`${batchProduct.name} batch stock updated.`);
-    setBatchProduct(null);
-  };
-
-  const addToCart = product => {
-    const available = getAvailableStock(product);
-    if (available < 1) {
-      flash(`${product.name} is unavailable or expired.`);
-      return;
-    }
-    const existing = cart.find(item => item.id === product.id);
-    if (existing && existing.qty >= available) {
-      flash(`Only ${available} ${product.name} available.`);
-      return;
-    }
-    setCart(previous => existing
-      ? previous.map(item => item.id === product.id ? { ...item, qty: item.qty + 1, stock: available } : item)
-      : [...previous, { ...product, stock: available, qty: 1 }]);
-    flash(`${product.name} added to sale.`);
-  };
-
-  const updateQuantity = (id, change) => {
-    setCart(previous => previous.map(item => {
-      if (item.id !== id) return item;
-      const product = products.find(entry => entry.id === id);
-      return { ...item, qty: Math.max(0, Math.min(item.qty + change, product ? getAvailableStock(product) : item.stock)) };
-    }).filter(item => item.qty > 0));
-  };
-
-  const completeSale = () => {
-    if (customer === 'New customer' && !customCustomer.trim()) {
-      flash('Enter the customer name before creating an invoice.');
-      return;
-    }
-    const unavailableLine = cart.find(item => {
-      const product = products.find(entry => entry.id === item.id) || item;
-      return getAvailableStock(product) < item.qty;
-    });
-    if (unavailableLine) {
-      flash(`${unavailableLine.name} no longer has enough unexpired stock. Adjust the sale before charging.`);
-      return;
-    }
-    const receiptNumber = String(Date.now()).slice(-6);
-    const saleItems = cart.map(item => {
-      const product = products.find(entry => entry.id === item.id) || item;
-      const { allocations } = allocateStockFromBatches(product, item.qty);
-      return { productId: item.id, name: item.name, quantity: item.qty, unitPrice: item.price, lineTotal: Number((item.price * item.qty).toFixed(2)), batchLots: allocations };
-    });
-    const sale = {
-      id: `POS-${receiptNumber}`,
-      invoiceNumber: `INV-${receiptNumber}`,
-      date: localDateKey(),
-      time: shortTime(new Date()),
-      cashier: currentStaff.name,
-      customer: invoiceCustomer,
-      subtotal: Number(subtotal.toFixed(2)),
-      discountAmount: Number((subtotal - total).toFixed(2)),
-      total: Number(total.toFixed(2)),
-      itemCount,
-      payment,
-      items: saleItems,
-    };
-    setLastInvoice(sale);
-    setSales(previous => [sale, ...previous]);
-    setProducts(previous => previous.map(product => {
-      const sold = cart.find(item => item.id === product.id);
-      if (!sold) return product;
-      const { batches } = allocateStockFromBatches(product, sold.qty);
-      return { ...product, batches, stock: batches.reduce((sum, batch) => sum + Number(batch.stock || 0), 0) };
+  const payAccount = (customerId, amount)=>{
+    setCustomers(cs=>cs.map(c=>{
+      if(c.id!==customerId) return c;
+      return {...c,balance:Math.max(0, Number(c.balance)-Number(amount))};
     }));
-    addActivity({ type: 'sale', title: `${currentStaff.name} completed a sale`, detail: `${format(total)} · ${payment}`, time: sale.time });
-    setCart([]);
-    setDiscount(false);
-    setShowPay(false);
-    setMobileCart(false);
-    setShowSuccess(true);
-    window.setTimeout(() => setShowSuccess(false), 6500);
+    addActivity({type:'account',title:`Account payment received`,detail:`${format(amount)} · ${customers.find(c=>c.id===customerId)?.name}`});
+    flash(`Payment of ${format(amount)} recorded`);
   };
 
-  const toggleAttendance = () => {
-    const today = localDateKey();
-    const entry = attendance.find(record => record.staff === currentStaff.name && record.date === today);
-    const now = clockTime(new Date());
-    if (!entry) {
-      setAttendance(previous => [{ id: `attendance-${Date.now()}`, staff: currentStaff.name, date: today, clockIn: now, clockOut: '', status: 'On shift' }, ...previous]);
-      addActivity({ type: 'attendance', title: `${currentStaff.name} clocked in`, detail: `Shift started at ${now}`, time: shortTime(new Date()) });
-      flash('You are clocked in for today.');
-    } else if (entry.status === 'On shift') {
-      setAttendance(previous => previous.map(record => record.id === entry.id ? { ...record, clockOut: now, status: 'Clocked out' } : record));
-      addActivity({ type: 'attendance', title: `${currentStaff.name} clocked out`, detail: `Shift ended at ${now}`, time: shortTime(new Date()) });
-      flash('You are clocked out for today.');
-    } else {
-      flash('Your shift is already completed for today.');
+  // Employees
+  const saveEmployee = (emp)=>{
+    if(editingEmployee){
+      setEmployees(es=>es.map(e=>e.id===emp.id?emp:e));
+      flash(`${emp.name} updated`);
+    }else{
+      setEmployees(es=>[emp,...es]);
+      flash(`${emp.name} added as ${emp.role}`);
     }
+    setShowEmployeeModal(false); setEditingEmployee(null);
   };
 
-  const submitLeaveRequest = request => {
-    const newRequest = { ...request, id: `leave-${Date.now()}`, staff: currentStaff.name, status: 'Pending', submittedDate: localDateKey() };
-    setLeaveRequests(previous => [newRequest, ...previous]);
-    addActivity({ type: 'leave', title: `${currentStaff.name} requested leave`, detail: `${request.type} · ${readableDate(request.startDate)}`, time: shortTime(new Date()) });
-    flash('Leave request sent to the owner.');
+  // Gift Cards
+  const saveGiftCard = (gc)=>{
+    setGiftCards(gs=>[gc,...gs]);
+    flash(`Gift card ${gc.code} created with ${format(gc.balance)}`);
+    setShowGiftModal(false);
   };
 
-  const reviewLeaveRequest = (requestId, status) => {
-    const request = leaveRequests.find(item => item.id === requestId);
-    if (!request || request.status !== 'Pending') return;
-    setLeaveRequests(previous => previous.map(item => item.id === requestId ? { ...item, status } : item));
-    addActivity({ type: 'leave', title: `${currentStaff.name} ${status.toLowerCase()} leave`, detail: `${request.staff} · ${request.type}`, time: shortTime(new Date()) });
-    flash(`Leave request ${status.toLowerCase()}.`);
+  // Messages
+  const sendMessage = (msg)=>{
+    setMessages(m=>[msg,...m]);
+    flash(`Message sent to ${msg.toName}`);
+    setShowMessageModal(false);
+  };
+  const markRead = (msgId, empId)=>{
+    setMessages(ms=>ms.map(m=>{
+      if(m.id!==msgId) return m;
+      if(m.readBy?.includes(empId)) return m;
+      return {...m,readBy:[...(m.readBy||[]),empId]};
+    }));
   };
 
-  const navItems = role === 'owner'
-    ? [
-      { label: 'Overview', mobileLabel: 'Overview', view: 'Dashboard', Icon: LayoutDashboard },
-      { label: 'Inventory', mobileLabel: 'Inventory', view: 'Inventory', Icon: Package },
-      { label: 'Invoices', mobileLabel: 'Invoices', view: 'Invoices', Icon: FileText },
-      { label: 'Reports', mobileLabel: 'Reports', view: 'Reports', Icon: BarChart3 },
-      { label: 'Attendance & leave', mobileLabel: 'Attendance', view: 'Attendance', Icon: CalendarDays },
-    ]
-    : [
-      { label: 'Point of sale', mobileLabel: 'Register', view: 'Point of sale', Icon: ShoppingCart },
-      { label: 'Inventory', mobileLabel: 'Inventory', view: 'Inventory', Icon: Package },
-      { label: 'My invoices', mobileLabel: 'Invoices', view: 'Invoices', Icon: FileText },
-      { label: 'Attendance & leave', mobileLabel: 'Attendance', view: 'Attendance', Icon: CalendarDays },
-    ];
-  const pendingLeaveCount = leaveRequests.filter(request => request.status === 'Pending').length;
-  const activeLabel = navItems.find(item => item.view === activeView)?.label || activeView;
-  const setView = view => {
-    setActiveView(view);
-    setMobileCart(false);
-    setShowAssistant(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  // POS logic
+  const filteredProducts = useMemo(()=>{
+    return products.filter(p=>{
+      const matchCat = cat==='All' || p.category===cat;
+      const q = search.toLowerCase().trim();
+      const text = `${p.name} ${p.brand||''} ${p.sku} ${p.category} ${p.barcode||''}`.toLowerCase();
+      return matchCat && text.includes(q);
+    });
+  },[products,cat,search]);
+
+  const addToCart = (product)=>{
+    if(product.stock<1){ flash(`${product.name} out of stock`); return }
+    setCart(prev=>{
+      const ex = prev.find(i=>i.id===product.id);
+      if(ex){
+        if(ex.qty>=product.stock){ flash(`Only ${product.stock} available`); return prev }
+        return prev.map(i=>i.id===product.id?{...i,qty:i.qty+1}:i);
+      }
+      return [...prev,{...product,qty:1}];
+    });
+    flash(`${product.name} added`);
+  };
+  const updateQty = (id, delta)=>{
+    setCart(prev=>prev.map(i=>{
+      if(i.id!==id) return i;
+      const prod = products.find(p=>p.id===id);
+      const max = prod?prod.stock: i.stock;
+      return {...i,qty:Math.max(1, Math.min(i.qty+delta, max))};
+    }));
+  };
+  const removeFromCart = (id)=> setCart(prev=>prev.filter(i=>i.id!==id));
+
+  const subtotal = cart.reduce((s,i)=>s+i.price*i.qty,0);
+  const discount = discountOn ? subtotal*0.1 : 0;
+  const total = subtotal - discount;
+  const itemCount = cart.reduce((s,i)=>s+i.qty,0);
+  const selectedCustomer = customers.find(c=>c.id===selectedCustomerId) || customers[0];
+
+  const completeSale = (payment, detail)=>{
+    if(!cart.length) return;
+    if(payment==='Account' && selectedCustomer.isWalkIn){ flash('Select a registered customer for account sales'); return }
+    if(payment==='Gift'){
+      const gc = giftCards.find(g=>g.code===detail.code && g.status==='active');
+      if(!gc){ flash('Invalid gift card'); return }
+      if(gc.balance < total){ flash(`Gift card balance ${format(gc.balance)} insufficient`); return }
+    }
+
+    const saleId = `POS-${String(Date.now()).slice(-6)}`;
+    const invoiceNumber = saleId.replace('POS','INV');
+    const sale = {
+      id:saleId, invoiceNumber,
+      date:todayKey(), time:shortTime(),
+      cashier: currentUser?.name || 'Cashier',
+      cashierId: currentUser?.id || cashierId,
+      customerId: selectedCustomer.id,
+      customerName: selectedCustomer.name,
+      items: cart.map(i=>({productId:i.id,name:i.name,qty:i.qty,unitPrice:i.price,lineTotal:i.price*i.qty})),
+      subtotal: Number(subtotal.toFixed(2)),
+      discount: Number(discount.toFixed(2)),
+      tax:0,
+      total: Number(total.toFixed(2)),
+      payment, paymentDetail: detail,
+      itemCount, status:'paid'
+    };
+
+    // update products stock
+    setProducts(prev=>prev.map(p=>{
+      const sold = cart.find(c=>c.id===p.id);
+      if(!sold) return p;
+      return {...p, stock: Math.max(0, p.stock - sold.qty)};
+    }));
+
+    // handle account
+    if(payment==='Account'){
+      setCustomers(cs=>cs.map(c=>{
+        if(c.id!==selectedCustomer.id) return c;
+        return {...c, balance: Number(c.balance)+Number(total), totalSpent: Number(c.totalSpent)+Number(total), visits: (c.visits||0)+1 };
+      }));
+    } else if(payment!=='Account'){
+      // update customer spent for non walk-in
+      if(!selectedCustomer.isWalkIn){
+        setCustomers(cs=>cs.map(c=> c.id===selectedCustomer.id ? {...c,totalSpent:Number(c.totalSpent)+Number(total),visits:(c.visits||0)+1} : c));
+      }
+    }
+
+    // handle gift card deduction
+    if(payment==='Gift'){
+      setGiftCards(gs=>gs.map(g=>{
+        if(g.code!==detail.code) return g;
+        const newBal = Number(g.balance)-Number(total);
+        return {...g, balance: Math.max(0,newBal), status: newBal<=0.01?'used':'active'};
+      }));
+    }
+
+    setSales(prev=>[sale,...prev]);
+    addActivity({type:'sale',title:`${sale.cashier} completed a sale`,detail:`${format(total)} · ${payment}`});
+    setCart([]); setDiscountOn(false); setShowPay(false); setMobileCart(false);
+    setSuccess(sale);
   };
 
-  const renderNav = (mobile = false) => navItems.map(({ label, mobileLabel, view, Icon }) => {
-    const badgeCount = view === 'Inventory' ? lowStockProducts.length : view === 'Attendance' && role === 'owner' ? pendingLeaveCount : 0;
-    return <button key={view} className={`${mobile ? 'mobile-nav-item' : 'nav-item'} ${activeView === view ? 'selected' : ''}`} onClick={() => setView(view)} aria-current={activeView === view ? 'page' : undefined}>
-      <Icon size={18} />
-      <span>{mobile ? mobileLabel : label}</span>
-      {!mobile && badgeCount > 0 && <span className="nav-count">{badgeCount}</span>}
-    </button>;
-  });
+  const todaySales = useMemo(()=> sales.filter(s=>s.date===todayKey()),[sales]);
+  const visibleSales = useMemo(()=>{
+    let list = isOwner ? sales : sales.filter(s=>s.cashierId===currentUser?.id || s.cashier===currentUser?.name);
+    if(filterSales.search){
+      const q=filterSales.search.toLowerCase();
+      list = list.filter(s=> `${s.invoiceNumber} ${s.customerName} ${s.cashier} ${s.payment}`.toLowerCase().includes(q));
+    }
+    if(filterSales.payment!=='All') list=list.filter(s=>s.payment===filterSales.payment);
+    if(filterSales.date!=='All'){
+      const now=new Date();
+      if(filterSales.date==='Today') list=list.filter(s=>s.date===todayKey());
+      if(filterSales.date==='Week'){ const weekAgo=new Date(); weekAgo.setDate(now.getDate()-7); const wk=weekAgo.toISOString().slice(0,10); list=list.filter(s=>s.date>=wk) }
+      if(filterSales.date==='Month'){ const m=now.toISOString().slice(0,7); list=list.filter(s=>s.date.startsWith(m)) }
+    }
+    return list;
+  },[sales,isOwner,currentUser,filterSales]);
 
-  if (!role) return <LoginScreen onSignIn={signIn} />;
+  const navOwner = [
+    {id:'dashboard',label:'Dashboard',icon:LayoutDashboard},
+    {id:'pos',label:'Point of Sale',icon:ShoppingCart},
+    {id:'inventory',label:'Item List',icon:Package},
+    {id:'customers',label:'Customers',icon:Users},
+    {id:'invoices',label:'Sales History',icon:FileText},
+    {id:'gift',label:'Gift & Accounts',icon:Gift},
+    {id:'employees',label:'Employees',icon:UserCircle},
+    {id:'reports',label:'Financial Report',icon:BarChart3},
+    {id:'messages',label:'Messages',icon:MessageSquare},
+  ];
+  const navCashier = [
+    {id:'pos',label:'POS',icon:ShoppingCart},
+    {id:'inventory',label:'Items',icon:Package},
+    {id:'customers',label:'Customers',icon:Users},
+    {id:'invoices',label:'My Sales',icon:FileText},
+    {id:'messages',label:'Messages',icon:MessageSquare},
+  ];
+  const nav = isOwner?navOwner:navCashier;
+
+  if(!role) return <LoginScreen employees={employees} onSignIn={signIn} />;
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#home" onClick={event => { event.preventDefault(); setView(role === 'owner' ? 'Dashboard' : 'Point of sale'); }}>
-          <span className="brand-mark"><Plus size={21} strokeWidth={3} /></span>
-          <span className="brand-copy"><b>posi<span>.</span></b><small>PHARMACY SUITE</small></span>
-        </a>
-        <div className="store-card">
-          <span className="store-icon"><Pill size={17} /></span>
-          <span className="store-copy"><b>Green Cross Pharmacy</b><small>Accra, Ghana</small></span>
-          <span className="store-status" aria-label="Store open" />
+        <a className="brand" href="#"><div className="brand-mark">P</div><div className="brand-copy"><b>POSI<span>.</span></b><small>SHOP MANAGER</small></div></a>
+        <div className="shop-card"><div className="shop-icon"><Store size={16}/></div><div className="shop-copy"><b>Green Market Shop</b><small>Accra, Ghana</small></div><span className="shop-dot"/></div>
+
+        <div className="nav-section">
+          <div className="nav-label">MAIN MENU</div>
+          <div className="nav-list">
+            {nav.map(n=>(
+              <button key={n.id} className={`nav-item ${view===n.id?'active':''}`} onClick={()=>setView(n.id)}>
+                <n.icon size={18}/><span>{n.label}</span>
+                {n.id==='inventory' && products.filter(p=>p.stock<=5).length>0 && <span className="badge">{products.filter(p=>p.stock<=5).length}</span>}
+                {n.id==='messages' && messages.filter(m=> (m.to==='all' || m.to===currentUser?.id) && !m.readBy?.includes(currentUser?.id)).length>0 && <span className="badge">{messages.filter(m=> (m.to==='all' || m.to===currentUser?.id) && !m.readBy?.includes(currentUser?.id)).length}</span>}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="nav-label">WORKSPACE</div>
-        <nav className="nav-list" aria-label="Main navigation">{renderNav()}</nav>
+
+        <div className="nav-section">
+          <div className="nav-label">PAYMENT TYPES</div>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap',padding:'0 6px'}}>
+            {paymentMethods.map(pm=>(
+              <span key={pm.id} className={`badge-pay ${pm.id.toLowerCase()}`} style={{fontSize:'10px',padding:'4px 8px',borderRadius:'20px'}}>{pm.label}</span>
+            ))}
+          </div>
+        </div>
+
         <div className="sidebar-bottom">
-          <div className="demo-note"><ShieldCheck size={15} /><span>Demo workspace<br /><b>Changes save on this device</b></span></div>
-          <div className="profile-card">
-            <div className={`avatar ${role === 'cashier' ? 'avatar-cashier' : ''}`}>{currentStaff.initials}</div>
-            <div className="profile-copy"><b>{currentStaff.name}</b><small>{currentStaff.title}</small></div>
-            <span className="profile-role">{role === 'owner' ? 'OWNER' : 'CASHIER'}</span>
+          <div className="owner-note"><ShieldCheck size={16} style={{flex:'none',marginTop:'1px'}}/><span><b>{isOwner?'Owner control':'Cashier workspace'}</b><br/>All sales combine to owner account</span></div>
+          <div className="profile">
+            <div className={`avatar ${isOwner?'owner':'cashier'}`}>{currentUser?.initials||initials(currentUser?.name||'U')}</div>
+            <div><b>{currentUser?.name}</b><small>{isOwner?'Store Owner':currentUser?.role}</small></div>
+            <span className="role-pill">{isOwner?'OWNER':'CASHIER'}</span>
           </div>
         </div>
       </aside>
 
-      <main className="main-area">
+      <main className="main">
         <header className="topbar">
-          <div className="breadcrumb"><span>Green Cross Pharmacy</span><ChevronRight size={14} /><b>{activeLabel}</b></div>
+          <div className="breadcrumb"><span>Green Market</span><span>›</span><b>{nav.find(n=>n.id===view)?.label||view}</b></div>
           <div className="top-actions">
-            <span className="demo-chip"><span /> DEMO STORE</span>
-            <span className={`connection-chip ${isOnline ? 'online' : 'offline'}`} role="status" aria-live="polite"><i />{isOnline ? 'Online' : 'Offline · saved here'}</span>
-            <span className="today"><Clock3 size={15} />{displayDate(currentDate)}</span>
-            <div className="signed-in-user">
-              <span className={`avatar ${role === 'cashier' ? 'avatar-cashier' : ''}`}>{currentStaff.initials}</span>
-              <span><small>{role === 'owner' ? 'OWNER ACCOUNT' : 'CASHIER ACCOUNT'}</small><b>{currentStaff.name}</b></span>
-            </div>
-            <button className="logout-button" onClick={signOut} aria-label="Sign out"><LogOut size={15} /><span>Sign out</span></button>
+            <span className={`chip ${online?'online':'offline'}`}><i/> {online?'Online':'Offline'}</span>
+            <span className="today"><Clock3 size={14}/>{fullDate()}</span>
+            <div className="user-menu"><div className={`avatar ${isOwner?'owner':'cashier'}`} style={{width:'28px',height:'28px',fontSize:'11px'}}>{currentUser?.initials||'U'}</div><span style={{fontSize:'12px',fontWeight:700,maxWidth:'110px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{currentUser?.name}</span></div>
+            <button className="logout" onClick={signOut}><LogOut size={14}/> Sign out</button>
           </div>
         </header>
 
-        <div className="page-content">
-          {storageError && <div className="storage-warning"><AlertTriangle size={16} />{storageError}</div>}
-          {activeView === 'Dashboard' && role === 'owner' && <OwnerDashboard
-            total={todayTotal}
-            todaySales={todaySales}
-            lowStockProducts={lowStockProducts}
-            expiryAlerts={expiryAlerts}
-            activities={activities}
-            attendance={attendance}
-            leaveRequests={leaveRequests}
-            onViewSales={() => setView('Invoices')}
-            onViewInventory={() => setView('Inventory')}
+        <div className="page">
+          {view==='dashboard' && isOwner && <DashboardOwner sales={sales} todaySales={todaySales} products={products} customers={customers} employees={employees} activities={activities} messages={messages} giftCards={giftCards} setView={setView} />}
+          {view==='pos' && <POSPage
+            products={filteredProducts} allProducts={products} categories={categories} cat={cat} setCat={setCat}
+            search={search} setSearch={setSearch} cart={cart} setCart={setCart} addToCart={addToCart} updateQty={updateQty} removeFromCart={removeFromCart}
+            customers={customers} selectedCustomerId={selectedCustomerId} setSelectedCustomerId={setSelectedCustomerId}
+            subtotal={subtotal} discount={discount} total={total} itemCount={itemCount} discountOn={discountOn} setDiscountOn={setDiscountOn}
+            showPay={showPay} setShowPay={setShowPay} mobileCart={mobileCart} setMobileCart={setMobileCart}
+            completeSale={completeSale} giftCards={giftCards}
+            onAddProduct={()=>{setEditingProduct(null);setShowProductModal(true)}}
           />}
-          {activeView === 'Point of sale' && <section className="page-section">
-            <div className="page-heading pos-page-heading">
-              <div><div className="eyebrow"><span className="live-dot" />{role === 'owner' ? 'OWNER REGISTER' : 'CASHIER REGISTER'} <span className="eyebrow-sep">·</span> {currentDate.toLocaleDateString('en-GH', { weekday: 'long', day: 'numeric', month: 'short' }).toUpperCase()}</div><h1>Point of sale</h1><p>Find a product, add it to the sale, and take payment.</p></div>
-              <div className="shift-card"><span className="shift-icon"><Clock3 size={17} /></span><span><small>Current shift</small><b>Open · 08:00–17:00</b></span></div>
-            </div>
-            <div className="pos-layout">
-              <section className="workspace-card catalog-panel">
-                <div className="catalog-heading">
-                  <div><h2>Product catalogue <span className="sale-dot" /></h2><p>{products.length} products in your shop</p></div>
-                  <div className="catalog-actions">{role === 'cashier' && <button className="assistant-launch-button" onClick={() => setShowAssistant(true)}><Sparkles size={16} /><span>Stock assistant</span></button>}<button className="outline-button" onClick={() => flash('A barcode scanner is not connected in this demo.')}><Barcode size={16} /><span>Scan</span></button><button className="primary-button compact-button" onClick={openNewProduct}><Plus size={16} /><span>Add product</span></button></div>
-                </div>
-                <div className="search-line"><label className="search-box"><Search size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search name, brand or barcode…" aria-label="Search products" /><kbd>⌘ K</kbd></label><button className="filter-button" onClick={() => { setCategory('All products'); setSearch(''); }} aria-label="Clear product filters"><SlidersHorizontal size={17} /><span>Reset</span></button></div>
-                <div className="category-scroll" aria-label="Product categories"><button className={`category-chip ${category === 'All products' ? 'active' : ''}`} onClick={() => setCategory('All products')}>All products <span className="all-count">{products.length}</span></button>{categories.map(item => <button key={item} className={`category-chip ${category === item ? 'active' : ''}`} onClick={() => setCategory(item)}>{item}</button>)}</div>
-                <div className="results-meta"><span>{visibleProducts.length} products found</span><span>Tap a product to add it to the sale</span></div>
-                {visibleProducts.length > 0 ? <div className="product-grid">{visibleProducts.map(product => <button key={product.id} className="product-card" onClick={() => addToCart(product)} disabled={product.stock < 1}>
-                  <div className="card-art-row"><ProductVisual product={product} /><span className={`stock-pill ${product.stock <= 5 ? 'low-stock' : ''}`}><i />{product.stock <= 5 ? `${product.stock} left` : 'In stock'}</span></div>
-                  <div className="product-name-row"><span><b>{product.name}</b><small>{product.brand || product.category}</small></span><span className="add-circle"><Plus size={15} /></span></div>
-                  <div className="product-bottom"><strong>{format(product.price)}</strong>{product.rx && <span className="rx-label"><ShieldCheck size={12} /> Rx</span>}</div>
-                </button>)}</div> : <EmptyState icon={Search} title="No products found" detail="Try a different search, or add this product to your inventory." action="Add product" onAction={openNewProduct} />}
-                <div className="catalog-footer"><span>Inventory updates when a sale is completed.</span><button onClick={() => setView('Inventory')}>Manage inventory <ArrowRight size={14} /></button></div>
-              </section>
-
-              <aside className={`workspace-card cart-panel ${mobileCart ? 'mobile-open' : ''}`}>
-                <div className="cart-header"><div><h2>Current sale <span className="sale-count">{itemCount}</span></h2><p>New transaction <span>·</span> {shortTime(new Date())}</p></div><button className="clear-button" onClick={() => setCart([])} disabled={!cart.length}>Clear all</button><button className="mobile-close" onClick={() => setMobileCart(false)} aria-label="Close sale"><X size={19} /></button></div>
-                <div className="customer-select"><span className="customer-avatar"><UserRound size={16} /></span>{customer === 'New customer' ? <input className="customer-name-input" value={customCustomer} onChange={event => setCustomCustomer(event.target.value)} placeholder="Name for invoice" aria-label="Customer name for invoice" maxLength={80} /> : <select value={customer} onChange={event => setCustomer(event.target.value)} aria-label="Select customer"><option>Walk-in customer</option><option>Akosua Boateng</option><option>Kwame Owusu</option><option>New customer</option></select>}{customer !== 'New customer' && <ChevronDown size={15} />}{customer === 'New customer' && <button type="button" className="customer-mode-back" onClick={() => setCustomer('Walk-in customer')} aria-label="Use walk-in customer"><X size={14} /></button>}</div>
-                <div className="cart-list">{cart.length ? cart.map(item => <div className="cart-item" key={item.id}><ProductVisual product={item} small /><div className="cart-item-info"><b>{item.name}</b><small>{format(item.price)} <span>·</span> {item.brand || item.category}</small><div className="quantity"><button onClick={() => updateQuantity(item.id, -1)} aria-label={`Decrease ${item.name}`}><Minus size={13} /></button><span>{item.qty}</span><button onClick={() => updateQuantity(item.id, 1)} disabled={item.qty >= item.stock} aria-label={`Increase ${item.name}`}><Plus size={13} /></button></div></div><div className="cart-price"><b>{format(item.price * item.qty)}</b><button onClick={() => setCart(previous => previous.filter(entry => entry.id !== item.id))} aria-label={`Remove ${item.name}`}><X size={14} /></button></div></div>) : <div className="empty-cart"><span className="empty-cart-icon"><ShoppingBag size={22} /></span><b>Your sale is empty</b><span>Tap a product to add it here.</span></div>}</div>
-                <button className={`discount-row ${discount ? 'discount-on' : ''}`} onClick={() => setDiscount(value => !value)}><span className="discount-left"><span className="discount-icon">%</span><span><b>Apply 10% discount</b><small>{discount ? 'Discount applied to this sale' : 'Optional sale discount'}</small></span></span><span className={`switch ${discount ? 'on' : ''}`}><i /></span></button>
-                <div className="totals"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{discount && <div className="discount-total"><span>Discount (10%)</span><b>− {format(subtotal * 0.1)}</b></div>}<div className="tax-line"><span>Tax <small>(included)</small></span><b>{format(total - total / 1.15)}</b></div><div className="total-row"><span>Total due</span><b>{format(total)}</b></div></div>
-                <div className="payment-label">PAYMENT METHOD</div><div className="payment-options"><button className={payment === 'Cash' ? 'pay-active' : ''} onClick={() => setPayment('Cash')}><Wallet size={16} />Cash</button><button className={payment === 'Mobile Money' ? 'pay-active' : ''} onClick={() => setPayment('Mobile Money')}><Activity size={16} />MoMo</button><button className={payment === 'Card' ? 'pay-active' : ''} onClick={() => setPayment('Card')}><CreditCard size={16} />Card</button></div>
-                <button className="checkout-button" disabled={!cart.length} onClick={() => { if (customer === 'New customer' && !customCustomer.trim()) { flash('Enter the customer name before creating an invoice.'); return; } setShowPay(true); }}><span>Charge {format(total)}</span><ArrowRight size={18} /></button><div className="secure-note"><ShieldCheck size={13} />Confirm payment to record this sale</div>
-              </aside>
-            </div>
-          </section>}
-          {activeView === 'Inventory' && <InventoryPage products={visibleInventory} totalCount={products.length} search={inventorySearch} setSearch={setInventorySearch} category={inventoryCategory} setCategory={setInventoryCategory} expiryAlerts={expiryAlerts} onAdd={openNewProduct} onEdit={product => { setEditingProduct(product); setShowProductModal(true); }} onManageBatches={setBatchProduct} />}
-          {activeView === 'Invoices' && <InvoicesPage role={role} currentStaff={currentStaff} sales={sales} onViewInvoice={setSelectedInvoice} />}
-          {activeView === 'Reports' && role === 'owner' && <ReportsPage sales={sales} />}
-          {activeView === 'Attendance' && <AttendancePage role={role} currentStaff={currentStaff} attendance={attendance} leaveRequests={leaveRequests} onClockToggle={toggleAttendance} onSubmitLeave={submitLeaveRequest} onReviewLeave={reviewLeaveRequest} />}
+          {view==='inventory' && <InventoryPage products={products} setProducts={setProducts} search={search} setSearch={setSearch} cat={cat} setCat={setCat} categories={categories} isOwner={isOwner} onEdit={(p)=>{setEditingProduct(p);setShowProductModal(true)}} onDelete={deleteProduct} onAdd={()=>{setEditingProduct(null);setShowProductModal(true)}} />}
+          {view==='customers' && <CustomersPage customers={customers} sales={sales} isOwner={isOwner} onEdit={(c)=>{setEditingCustomer(c);setShowCustomerModal(true)}} onAdd={()=>{setEditingCustomer(null);setShowCustomerModal(true)}} onPayAccount={payAccount} />}
+          {view==='invoices' && <InvoicesPage sales={visibleSales} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} />}
+          {view==='gift' && isOwner && <GiftAccountPage giftCards={giftCards} customers={customers} sales={sales} onAdd={()=>setShowGiftModal(true)} onPayAccount={payAccount} />}
+          {view==='employees' && isOwner && <EmployeesPage employees={employees} sales={sales} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} />}
+          {view==='reports' && isOwner && <ReportsPage sales={sales} products={products} customers={customers} giftCards={giftCards} />}
+          {view==='messages' && <MessagesPage messages={messages} employees={employees} currentUser={currentUser} isOwner={isOwner} onSend={()=>setShowMessageModal(true)} onMarkRead={markRead} />}
         </div>
 
-        {activeView === 'Point of sale' && <button className="mobile-cart-fab" onClick={() => setMobileCart(true)}><ShoppingCart size={18} /> View sale <span>{itemCount}</span><b>{format(total)}</b></button>}
-        <nav className={`mobile-nav ${role === 'owner' ? 'owner-nav' : 'cashier-nav'}`} aria-label="Mobile navigation">{renderNav(true)}</nav>
+        <button className="fab" onClick={()=>setMobileCart(true)}><ShoppingCart size={18}/> View sale <span style={{background:'#ffffff22',padding:'2px 8px',borderRadius:'20px'}}>{itemCount}</span> <b>{format(total)}</b></button>
+        <nav className="mnav">
+          {nav.slice(0,5).map(n=>(
+            <button key={n.id} className={view===n.id?'active':''} onClick={()=>setView(n.id)}><n.icon size={18}/><span>{n.label}</span></button>
+          ))}
+        </nav>
       </main>
 
-      {showProductModal && <ProductFormModal key={editingProduct?.id || 'new-product'} initialProduct={editingProduct} onClose={() => { setShowProductModal(false); setEditingProduct(null); }} onManageBatches={product => { setShowProductModal(false); setBatchProduct(product); }} onSave={saveProduct} />}
-      {batchProduct && <BatchManagerModal key={batchProduct.id} product={batchProduct} onClose={() => setBatchProduct(null)} onSave={saveBatches} />}
-      {selectedInvoice && <InvoiceDetailsModal sale={selectedInvoice} onClose={() => setSelectedInvoice(null)} onPrintReceipt={sale => { setSelectedInvoice(null); setSelectedReceipt(sale); }} />}
-      {selectedReceipt && <ReceiptPrintModal sale={selectedReceipt} onClose={() => setSelectedReceipt(null)} />}
-      {showAssistant && role === 'cashier' && activeView === 'Point of sale' && <StockAssistant products={products} onClose={() => setShowAssistant(false)} onAddToSale={addToCart} />}
-      {showPay && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setShowPay(false); }}><div className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title"><button className="modal-close" onClick={() => setShowPay(false)} aria-label="Close payment confirmation"><X size={19} /></button><span className="modal-icon"><Wallet size={24} /></span><span className="modal-eyebrow">COMPLETE SALE</span><h2 id="checkout-title">Confirm payment</h2><p>Confirm payment from {invoiceCustomer.toLowerCase()} to record this transaction.</p><div className="modal-amount"><span>Amount due</span><b>{format(total)}</b></div><div className="modal-method"><span>Payment method</span><strong>{payment === 'Mobile Money' ? 'Mobile Money (MoMo)' : payment}</strong></div><button className="confirm-button" onClick={completeSale}><Check size={17} /> Confirm payment &amp; create invoice</button><div className="modal-secure"><ShieldCheck size={13} />The sale will appear in the owner dashboard</div></div></div>}
-      {showSuccess && <div className="success-toast"><span className="success-icon"><Check size={17} /></span><span><b>Sale invoiced!</b><small>Payment recorded · invoice {lastInvoice?.invoiceNumber}</small></span><button onClick={() => { setShowSuccess(false); setSelectedReceipt(lastInvoice); }}><Printer size={14} />Receipt</button><button onClick={() => { setShowSuccess(false); setSelectedInvoice(lastInvoice); }}><FileText size={15} />Invoice</button><button className="success-x" onClick={() => setShowSuccess(false)} aria-label="Dismiss"><X size={16} /></button></div>}
-      {notice && <div className="toast" role="status"><CheckCircle2 size={17} />{notice}</div>}
+      {/* Modals */}
+      {showProductModal && <ProductModal product={editingProduct} categories={categories.filter(c=>c!=='All')} onClose={()=>{setShowProductModal(false);setEditingProduct(null)}} onSave={saveProduct} />}
+      {showCustomerModal && <CustomerModal customer={editingCustomer} onClose={()=>{setShowCustomerModal(false);setEditingCustomer(null)}} onSave={saveCustomer} />}
+      {showEmployeeModal && <EmployeeModal employee={editingEmployee} onClose={()=>{setShowEmployeeModal(false);setEditingEmployee(null)}} onSave={saveEmployee} />}
+      {showGiftModal && <GiftModal customers={customers} onClose={()=>setShowGiftModal(false)} onSave={saveGiftCard} />}
+      {showMessageModal && <MessageModal employees={employees} currentUser={currentUser} onClose={()=>setShowMessageModal(false)} onSend={sendMessage} />}
+      {showPay && <PaymentModal cart={cart} subtotal={subtotal} discount={discount} total={total} customer={selectedCustomer} giftCards={giftCards} onClose={()=>setShowPay(false)} onComplete={completeSale} />}
+      {selectedInvoice && <InvoiceModal sale={selectedInvoice} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} />}
+      {selectedReceipt && <ReceiptModal sale={selectedReceipt} onClose={()=>setSelectedReceipt(null)} />}
+      {toast && <div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
+      {success && <div className="success"><span style={{width:'32px',height:'32px',borderRadius:'50%',background:'#ecfdf5',color:'#065f46',display:'grid',placeItems:'center'}}><Check size={16}/></span><span><b>Sale invoiced!</b><small>{success.invoiceNumber} · {format(success.total)}</small></span><button className="btn small" onClick={()=>{setSelectedReceipt(success);setSuccess(null)}}><Printer size={14}/>Receipt</button><button className="btn small" onClick={()=>{setSelectedInvoice(success);setSuccess(null)}}><FileText size={14}/>Invoice</button><button className="btn icon small" onClick={()=>setSuccess(null)}><X size={14}/></button></div>}
     </div>
   );
 }
 
-const inventoryQuestionStops = new Set(['how', 'many', 'quantity', 'qty', 'stock', 'left', 'available', 'availability', 'do', 'we', 'have', 'is', 'there', 'in', 'the', 'shop', 'store', 'a', 'an', 'of', 'this', 'product', 'products', 'medicine', 'medicines', 'drug', 'drugs', 'can', 'i', 'get', 'tell', 'me', 'please', 'show', 'what', 'are', 'any', 'units', 'count', 'for', 'on', 'hand', 'and', 'with', 'at', 'price', 'much', 'each', 'it', 'that', 'those', 'these', 'find', 'check', 'got', 'some', 'got']);
+// Components
 
-function normalizeInventoryQuestion(value) {
-  return value.toLowerCase()
-    .replace(/(\d+)\s+(mg|ml|mcg|g|iu|tablet|tablets|capsule|capsules)\b/g, '$1$2')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function findStockMatches(question, products) {
-  const normalized = normalizeInventoryQuestion(question);
-  const tokens = [...new Set(normalized.split(' ').filter(token => token.length > 1 && !inventoryQuestionStops.has(token)))];
-  if (!tokens.length) return [];
-
-  return products.map(product => {
-    const name = normalizeInventoryQuestion(product.name || '');
-    const brand = normalizeInventoryQuestion(product.brand || '');
-    const category = normalizeInventoryQuestion(product.category || '');
-    const barcode = normalizeInventoryQuestion(product.barcode || '');
-    const nameTokens = name.split(' ');
-    const brandTokens = brand.split(' ');
-    const categoryTokens = category.split(' ');
-    let score = name && normalized.includes(name) ? 10 + nameTokens.length : 0;
-
-    for (const token of tokens) {
-      if (nameTokens.includes(token)) score += 5;
-      else if (token.length >= 5 && nameTokens.some(word => word.includes(token))) score += 2;
-      if (brandTokens.includes(token) && !nameTokens.includes(token)) score += 3;
-      if (categoryTokens.includes(token)) score += 2;
-      if (barcode && barcode.includes(token)) score += 4;
-    }
-    return { product, score };
-  }).filter(match => match.score > 0)
-    .sort((first, second) => second.score - first.score)
-    .slice(0, 4);
-}
-
-function getStockAnswer(question, products) {
-  const normalizedQuestion = normalizeInventoryQuestion(question);
-  const asksForList = /\b(what|which|show|list|all|any|how|tell)\b/.test(normalizedQuestion)
-    && (/\b(product|products|item|items|medicine|medicines|drug|drugs)\b/.test(normalizedQuestion)
-      || /\b(available|stock)\b/.test(normalizedQuestion));
-  if (asksForList) {
-    const availableProducts = products.map(product => ({ ...product, stock: getAvailableStock(product) })).filter(product => product.stock > 0).sort((first, second) => second.stock - first.stock);
-    const asksForCount = /\b(how many|count|number)\b/.test(normalizedQuestion)
-      && /\b(products|items|medicines|drugs)\b/.test(normalizedQuestion);
-    if (!availableProducts.length) return { text: 'There are no products currently available to sell.', products: [] };
-    const intro = asksForCount
-      ? `There are ${availableProducts.length} product types currently in stock. Here are the available items:`
-      : 'Here are some products currently available and their unexpired quantities:';
-    return { text: intro, products: availableProducts.slice(0, 5) };
-  }
-
-  const matches = findStockMatches(question, products);
-  if (!matches.length) {
-    return { text: 'I could not match that to a product in this shop. Try a product name, brand, barcode, or category.', products: [] };
-  }
-
-  const leading = matches[0];
-  const second = matches[1];
-  const isClearMatch = !second || leading.score >= second.score + 2;
-  if (isClearMatch) {
-    const product = leading.product;
-    const available = getAvailableStock(product);
-    const answer = available > 0
-      ? `Yes, ${product.name} is available. There are ${available} unexpired units in stock at ${format(product.price)} each.`
-      : `No, ${product.name} is currently unavailable for sale (out of stock or expired).`;
-    return { text: answer, products: [{ ...product, stock: available }] };
-  }
-  return { text: 'I found a few matching products. Here is the current unexpired quantity for each:', products: matches.map(match => ({ ...match.product, stock: getAvailableStock(match.product) })) };
-}
-
-function StockAssistant({ products, onClose, onAddToSale }) {
-  const [question, setQuestion] = useState('');
-  const [messages, setMessages] = useState([{
-    id: 'assistant-welcome',
-    role: 'assistant',
-    text: 'Hi! Ask me what is available or how many units are left. I can check product names, brands, and categories.',
-  }]);
-  const messagesEndRef = useRef(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages]);
-
-  const askQuestion = value => {
-    const cleanQuestion = value.trim();
-    if (!cleanQuestion) return;
-    const answer = getStockAnswer(cleanQuestion, products);
-    const time = Date.now();
-    setMessages(previous => [
-      ...previous,
-      { id: `user-${time}`, role: 'user', text: cleanQuestion },
-      { id: `answer-${time}`, role: 'assistant', text: answer.text, products: answer.products },
-    ]);
-    setQuestion('');
-  };
-
-  const submitQuestion = event => {
-    event.preventDefault();
-    askQuestion(question);
-  };
-
-  return <div className="assistant-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <section className="assistant-panel" role="dialog" aria-modal="true" aria-labelledby="assistant-title">
-      <header className="assistant-header">
-        <span className="assistant-brand-icon"><Sparkles size={19} /></span>
-        <span className="assistant-title-copy"><small>POSI STOCK ASSISTANT</small><b id="assistant-title">Ask about inventory</b></span>
-        <span className="assistant-mode"><i /> READY</span>
-        <button className="assistant-close" onClick={onClose} aria-label="Close stock assistant"><X size={18} /></button>
-      </header>
-      <div className="assistant-subhead"><Sparkles size={14} /><span>I check your current shop quantities and product availability.</span></div>
-      <div className="assistant-messages">
-        {messages.map(message => <div key={message.id} className={`assistant-message ${message.role}`}>
-          {message.role === 'assistant' && <span className="assistant-message-icon"><Sparkles size={13} /></span>}
-          <div className="assistant-bubble"><p>{message.text}</p>{message.products?.map(product => <div className="assistant-product" key={product.id}>
-            <ProductVisual product={product} small />
-            <span className="assistant-product-copy"><b>{product.name}</b><small className={product.stock <= 5 ? 'assistant-low-stock' : ''}>{product.stock} {product.stock === 1 ? 'unit' : 'units'} available · {format(product.price)}</small></span>
-            <button className="assistant-add-button" disabled={product.stock < 1} onClick={() => onAddToSale(product)}>{product.stock > 0 ? <><Plus size={13} />Add</> : 'Out'}</button>
-          </div>)}</div>
-        </div>)}
-        <div ref={messagesEndRef} />
-      </div>
-      <div className="assistant-prompts"><span>TRY ASKING</span><div>
-        {['How many Paracetamol are left?', 'Is Zinc available?', 'Do we have cough syrup?'].map(prompt => <button key={prompt} onClick={() => askQuestion(prompt)}>{prompt}</button>)}
-      </div></div>
-      <form className="assistant-input-form" onSubmit={submitQuestion}><input autoComplete="off" value={question} onChange={event => setQuestion(event.target.value)} placeholder="Ask about a product or quantity…" aria-label="Ask the stock assistant" /><button type="submit" disabled={!question.trim()} aria-label="Send question"><ArrowRight size={17} /></button></form>
-      <p className="assistant-footnote">Demo stock assistant · answers are based on the inventory saved in this browser.</p>
-    </section>
-  </div>;
-}
-
-function LoginScreen({ onSignIn }) {
-  const [selectedRole, setSelectedRole] = useState('owner');
-  const [selectedCashier, setSelectedCashier] = useState(cashiers[0].name);
-
-  return <main className="login-shell">
-    <section className="login-brand-panel">
-      <a className="brand login-brand" href="#login"><span className="brand-mark"><Plus size={21} strokeWidth={3} /></span><span className="brand-copy"><b>posi<span>.</span></b><small>PHARMACY SUITE</small></span></a>
-      <div className="login-hero-copy">
-        <span className="login-kicker"><span /> PHARMACY OPERATIONS</span>
-        <h1>One shop.<br /><span>Separate workspaces.</span></h1>
-        <p>The owner keeps an eye on the shop. Cashiers get a focused register for serving customers.</p>
-      </div>
-      <div className="login-side-card"><span className="side-card-icon"><Users size={18} /></span><span><b>Owner + cashier</b><small>Independent workspaces, shared shop activity</small></span><span className="side-card-check"><Check size={15} /></span></div>
-      <div className="login-brand-footer"><ShieldCheck size={14} /> Demo sign-in · shop data stays in this browser</div>
-    </section>
-    <section className="login-content">
-      <div className="login-card">
-        <span className="login-card-kicker">GREEN CROSS PHARMACY · ACCRA</span>
-        <h2>Sign in to POSI</h2>
-        <p className="login-intro">Choose the account and workspace you use at the shop.</p>
-        <div className="account-choices">
-          <button type="button" className={`account-choice ${selectedRole === 'owner' ? 'active' : ''}`} onClick={() => setSelectedRole('owner')}>
-            <span className="choice-icon owner-choice-icon"><ShieldCheck size={18} /></span><span className="choice-copy"><b>Owner workspace</b><small>Shop overview, staff monitor and all sales</small></span><span className="choice-check">{selectedRole === 'owner' && <Check size={14} />}</span>
-          </button>
-          <button type="button" className={`account-choice ${selectedRole === 'cashier' ? 'active' : ''}`} onClick={() => setSelectedRole('cashier')}>
-            <span className="choice-icon cashier-choice-icon"><ShoppingCart size={18} /></span><span className="choice-copy"><b>Cashier workspace</b><small>Register, inventory and your own sales</small></span><span className="choice-check">{selectedRole === 'cashier' && <Check size={14} />}</span>
-          </button>
+function LoginScreen({employees,onSignIn}){
+  const [role,setRole]=useState('owner');
+  const [cashierId,setCashierId]=useState(employees.filter(e=>e.role==='cashier')[0]?.id||'e2');
+  return (
+    <div className="login">
+      <div className="login-left">
+        <div className="brand" style={{color:'#fff'}}><div className="brand-mark" style={{background:'#fff',color:'#0f2320'}}>P</div><div className="brand-copy"><b style={{color:'#fff'}}>POSI<span style={{color:'#6ee7b7'}}>.</span></b><small style={{color:'#a7f3d0'}}>SHOP POS SYSTEM</small></div></div>
+        <div style={{marginTop:'auto',maxWidth:'420px',position:'relative',zIndex:1}}>
+          <div className="eyebrow" style={{color:'#6ee7b7'}}><span className="kicker-dot" style={{background:'#6ee7b7',boxShadow:'0 0 0 4px #ffffff22'}}/> COMPLETE SHOP SOLUTION</div>
+          <h1 style={{fontSize:'42px',fontWeight:900,letterSpacing:'-1.5px',lineHeight:1.05,margin:'14px 0 10px'}}>One shop.<br/><span style={{color:'#6ee7b7'}}>All accounts combined.</span></h1>
+          <p style={{color:'#cbd5d1',fontSize:'13px',lineHeight:1.6}}>Cash, MoMo, Check, Gift & Account sales. Owner controls everything, cashiers sell fast.</p>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginTop:'22px'}}>
+            <div style={{padding:'12px',border:'1px solid #ffffff22',borderRadius:'10px',background:'#ffffff0f'}}><b style={{fontSize:'12px'}}>💰 5 Payment Methods</b><small style={{display:'block',color:'#a7f3d0',marginTop:'4px',fontSize:'11px'}}>Cash · MoMo · Check · Gift · Account</small></div>
+            <div style={{padding:'12px',border:'1px solid #ffffff22',borderRadius:'10px',background:'#ffffff0f'}}><b style={{fontSize:'12px'}}>👑 Owner Combined</b><small style={{display:'block',color:'#a7f3d0',marginTop:'4px',fontSize:'11px'}}>All cashier sales → owner account</small></div>
+          </div>
         </div>
-        {selectedRole === 'owner' ? <div className="account-preview"><span className="avatar">AM</span><span><small>OWNER ACCOUNT</small><b>Abena Mensah</b></span><span className="account-tag">OWNER</span></div> : <label className="cashier-picker"><span>Cashier account</span><span className="cashier-select-control"><select value={selectedCashier} onChange={event => setSelectedCashier(event.target.value)}>{cashiers.map(cashier => <option key={cashier.name} value={cashier.name}>{cashier.name} · {cashier.title}</option>)}</select><ChevronDown size={15} /></span></label>}
-        <button className="primary-button login-submit" onClick={() => onSignIn(selectedRole, selectedCashier)}><span>Continue as {selectedRole}</span><ArrowRight size={17} /></button>
-        <div className="login-disclaimer"><ShieldCheck size={15} /><p><b>Prototype sign-in</b><br />Owner and cashier screens are separate, but passwords are not connected yet. The demo shares this browser's shop data so the owner can monitor cashier sales.</p></div>
       </div>
-      <p className="login-bottom-note">Need access? Ask the shop owner to set up your staff account.</p>
-    </section>
-  </main>;
-}
+      <div className="login-right">
+        <div className="login-card">
+          <span style={{fontSize:'10px',fontWeight:800,letterSpacing:'1px',color:'#0f766e'}}>GREEN MARKET · ACCRA</span>
+          <h2 style={{margin:'8px 0 4px',fontSize:'24px',fontWeight:900}}>Sign in to POSI</h2>
+          <p style={{margin:0,color:'#6b7d76',fontSize:'13px'}}>Choose workspace. Owner sees combined accounts.</p>
 
-function OwnerDashboard({ total, todaySales, lowStockProducts, expiryAlerts, activities, attendance, leaveRequests, onViewSales, onViewInventory }) {
-  const today = localDateKey();
-  const cashierSummary = cashiers.map(cashier => {
-    const cashierSales = todaySales.filter(sale => sale.cashier === cashier.name);
-    const shift = attendance.find(record => record.staff === cashier.name && record.date === today);
-    return { ...cashier, status: shift?.status || 'Not clocked in', clockIn: shift?.clockIn || '', count: cashierSales.length, total: cashierSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0) };
-  });
-  const activeCount = cashierSummary.filter(cashier => cashier.status === 'On shift').length;
-  const pendingLeave = leaveRequests.filter(request => request.status === 'Pending').length;
-  const metrics = [
-    { label: 'Sales today', value: format(total), note: `${todaySales.length} completed transactions`, Icon: Wallet, tone: 'green', trend: '+12.8%' },
-    { label: 'Transactions', value: String(todaySales.length), note: 'Sales recorded today', Icon: ShoppingBag, tone: 'blue', trend: null },
-    { label: 'Cashiers on shift', value: String(activeCount), note: 'Across the store today', Icon: Users, tone: 'violet', trend: null },
-    { label: 'Pending leave', value: String(pendingLeave), note: 'Requests to review', Icon: CalendarDays, tone: pendingLeave ? 'amber' : 'green', trend: null },
-    { label: 'Low stock items', value: String(lowStockProducts.length), note: '5 units or fewer remaining', Icon: AlertTriangle, tone: lowStockProducts.length ? 'amber' : 'green', trend: null },
-    { label: 'Expiry watch', value: String(expiryAlerts.length), note: `${expiryAlerts.filter(alert => alert.expired).length} expired · ${expiryAlerts.filter(alert => alert.missing).length} missing dates`, Icon: CalendarDays, tone: expiryAlerts.length ? 'amber' : 'green', trend: null },
-  ];
-  return <section className="page-section dashboard-page">
-    <div className="page-heading"><div><div className="eyebrow"><span className="live-dot" /> OWNER OVERVIEW <span className="eyebrow-sep">·</span> {displayDate(new Date()).toUpperCase()}</div><h1>Shop overview</h1><p>Monitor sales, stock and cashier activity in one place.</p></div><span className="open-shift-badge"><span />Store open <b>·</b> {activeCount} cashier shifts active</span></div>
-    <div className="metrics-grid">{metrics.map(({ label, value, note, Icon, tone, trend }) => <article className="metric-card" key={label}><span className={`metric-icon ${tone}`}><Icon size={18} /></span><span className="metric-label">{label}</span><b className="metric-value">{value}</b><span className="metric-note">{trend && <em><ArrowUpRight size={13} />{trend}</em>}{note}</span></article>)}</div>
-    <div className="dashboard-grid">
-      <section className="workspace-card dashboard-panel cashier-monitor">
-        <div className="panel-heading"><div><h2>Cashier monitor</h2><p>Sales and shift status by cashier today.</p></div><button className="text-button" onClick={onViewSales}>View all sales <ArrowRight size={14} /></button></div>
-        <div className="table-scroll"><table className="data-table monitor-table"><thead><tr><th>TEAM MEMBER</th><th>SHIFT STATUS</th><th>TRANSACTIONS</th><th>SALES TODAY</th></tr></thead><tbody>{cashierSummary.map(cashier => <tr key={cashier.name}><td><div className="team-member"><span className="avatar team-avatar">{cashier.initials}</span><span><b>{cashier.name}</b><small>{cashier.title} · {cashier.shift}</small></span></div></td><td><span className={`status-pill ${cashier.status === 'On shift' ? 'on-shift' : 'clocked-out'}`}><i />{cashier.status}</span></td><td>{cashier.count}</td><td><b>{format(cashier.total)}</b></td></tr>)}</tbody></table></div>
-        <div className="monitor-foot"><span><span className="live-dot" /> Activity updates when a sale is recorded</span><span>Demo shift schedule</span></div>
-      </section>
-      <section className="workspace-card activity-panel">
-        <div className="panel-heading"><div><h2>Recent activity</h2><p>Latest updates from the shop.</p></div><span className="activity-live"><i /> TODAY</span></div>
-        <div className="activity-list">{activities.slice(0, 5).map(activity => <div className="activity-row" key={activity.id}><span className={`activity-icon ${activity.type}`}>
-          {activity.type === 'sale' ? <ShoppingCart size={15} /> : activity.type === 'attendance' ? <Clock3 size={15} /> : activity.type === 'leave' ? <CalendarDays size={15} /> : activity.type === 'stock' ? <Package size={15} /> : <PackagePlus size={15} />}
-        </span><span className="activity-copy"><b>{activity.title}</b><small>{activity.detail}</small></span><time>{activity.time}</time></div>)}</div>
-        <div className="activity-footer"><span>Owner view includes all cashier updates.</span></div>
-      </section>
-      <section className="workspace-card inventory-alert-panel">
-        <div className="panel-heading"><div><h2>Stock to review</h2><p>Products that need a restock check.</p></div><button className="text-button" onClick={onViewInventory}>Inventory <ArrowRight size={14} /></button></div>
-        {lowStockProducts.length ? <div className="stock-alert-list">{lowStockProducts.slice(0, 4).map(product => <div className="stock-alert-row" key={product.id}><ProductVisual product={product} small /><span><b>{product.name}</b><small>{product.category}</small></span><strong className={product.stock === 0 ? 'out-of-stock' : ''}>{product.stock} left</strong></div>)}</div> : <div className="clear-stock"><CheckCircle2 size={18} /><span>All products have healthy stock.</span></div>}
-      </section>
-      <section className="workspace-card dashboard-expiry-panel"><div className="panel-heading"><div><h2>Expiry watch</h2><p>Expired, near-expiry or undated medication lots.</p></div><button className="text-button" onClick={onViewInventory}>Review stock <ArrowRight size={14} /></button></div>{expiryAlerts.length ? <div className="stock-alert-list">{expiryAlerts.slice(0, 4).map(alert => <div className="stock-alert-row expiry-dashboard-row" key={`${alert.product.id}-${alert.batch.id}`}><span className={`expiry-alert-icon ${alert.expired ? 'expired' : ''}`}><AlertTriangle size={15} /></span><span><b>{alert.product.name}</b><small>Lot {alert.batch.lotNumber} · {alert.batch.stock} units</small></span><strong className={alert.expired ? 'out-of-stock' : 'expiry-dashboard-near'}>{alert.expired ? 'Expired' : alert.missing ? 'Date missing' : `${alert.days}d left`}</strong></div>)}</div> : <div className="clear-stock"><CheckCircle2 size={18} /><span>No expired, near-expiry or undated lots.</span></div>}</section>
-      <section className="owner-tip-card"><span className="tip-icon"><ShieldCheck size={19} /></span><div><b>Owner controls</b><p>Use Invoices, Reports, and Attendance &amp; leave to review billing and staff activity. Updates save to this browser.</p></div><span className="tip-arrow"><ArrowDownRight size={18} /></span></section>
+          <div style={{display:'flex',flexDirection:'column',gap:'8px',margin:'20px 0'}}>
+            <button className={`btn ${role==='owner'?'primary':'ghost'}`} style={{justifyContent:'flex-start',minHeight:'64px'}} onClick={()=>setRole('owner')}>
+              <ShieldCheck size={20}/><span style={{textAlign:'left'}}><b>Owner workspace</b><small style={{display:'block',fontWeight:400,color:role==='owner'?'#a7f3d0':'#6b7d76'}}>Combined accounts, reports, employees, messages</small></span>{role==='owner'&&<Check size={16} style={{marginLeft:'auto'}}/>}
+            </button>
+            <button className={`btn ${role==='cashier'?'primary':'ghost'}`} style={{justifyContent:'flex-start',minHeight:'64px'}} onClick={()=>setRole('cashier')}>
+              <ShoppingCart size={20}/><span style={{textAlign:'left'}}><b>Cashier workspace</b><small style={{display:'block',fontWeight:400,color:role==='cashier'?'#a7f3d0':'#6b7d76'}}>Fast POS, customers, sales history</small></span>{role==='cashier'&&<Check size={16} style={{marginLeft:'auto'}}/>}
+            </button>
+          </div>
+
+          {role==='cashier' && (
+            <div className="field"><label>Select cashier account</label>
+              <select value={cashierId} onChange={e=>setCashierId(e.target.value)}>
+                {employees.filter(e=>e.role!=='owner').map(e=><option key={e.id} value={e.id}>{e.name} · {e.role}</option>)}
+              </select>
+            </div>
+          )}
+
+          <button className="btn primary" style={{width:'100%',marginTop:'16px',justifyContent:'space-between'}} onClick={()=>onSignIn(role,cashierId)}>
+            <span>Continue as {role}</span><ArrowRight size={18}/>
+          </button>
+
+          <div style={{marginTop:'14px',padding:'10px',borderRadius:'8px',background:'#f6fbf8',display:'flex',gap:'8px',fontSize:'11px',color:'#4a635c'}}>
+            <ShieldCheck size={14} style={{flex:'none'}}/><span><b>Demo POS</b> — No password. Data saves in this browser. Cash, MoMo, Check, Gift, Account all functional.</span>
+          </div>
+        </div>
+      </div>
     </div>
-  </section>;
+  );
 }
 
-function InventoryPage({ products, totalCount, search, setSearch, category, setCategory, expiryAlerts, onAdd, onEdit, onManageBatches }) {
-  const lowStockCount = products.filter(product => product.stock <= 5).length;
-  const expiredCount = expiryAlerts.filter(alert => alert.expired).length;
-  const nearExpiryCount = expiryAlerts.filter(alert => !alert.expired && !alert.missing).length;
-  const missingExpiryCount = expiryAlerts.filter(alert => alert.missing).length;
-  return <section className="page-section">
-    <div className="page-heading"><div><div className="eyebrow"><Package size={13} /> SHOP CATALOGUE</div><h1>Inventory</h1><p>Manage live stock, lot numbers and medication expiry across the shop.</p></div><button className="primary-button" onClick={onAdd}><Plus size={17} /> Add product</button></div>
-    <div className="inventory-summary-row"><div><b>{totalCount}</b><span>products in catalogue</span></div><div className={lowStockCount ? 'inventory-alert-text' : ''}><AlertTriangle size={16} /><b>{lowStockCount}</b><span>low stock in view</span></div><div className={expiredCount ? 'inventory-expired-text' : ''}><AlertTriangle size={16} /><b>{expiredCount}</b><span>expired lots</span></div><div className={nearExpiryCount ? 'inventory-near-expiry-text' : ''}><CalendarDays size={16} /><b>{nearExpiryCount}</b><span>near expiry</span></div><div className={missingExpiryCount ? 'inventory-expiry-missing-text' : ''}><CalendarDays size={16} /><b>{missingExpiryCount}</b><span>missing dates</span></div><span className="local-save-note"><ShieldCheck size={15} /> Saves on this device</span></div>
-    {expiryAlerts.length > 0 && <section className="workspace-card expiry-alerts-panel"><div className="panel-heading"><div><h2>Expiry watch</h2><p>Expired, undated or due within the next 90 days · check local pharmacy procedures for safe handling.</p></div><span className="expiry-alert-total"><AlertTriangle size={14} />{expiryAlerts.length}</span></div><div className="expiry-alert-list">{expiryAlerts.slice(0, 6).map(alert => <div key={`${alert.product.id}-${alert.batch.id}`} className={`expiry-alert-row ${alert.expired ? 'expired-row' : alert.missing ? 'missing-row' : ''}`}><span className={`expiry-alert-icon ${alert.expired ? 'expired' : ''}`}><AlertTriangle size={16} /></span><span className="expiry-alert-copy"><b>{alert.product.name}</b><small>Lot {alert.batch.lotNumber} · {alert.batch.stock} units · {alert.missing ? 'expiry date not recorded' : `expires ${readableDate(alert.batch.expiry)}`}</small></span><span className={`expiry-status ${alert.expired ? 'expired' : alert.missing ? 'missing' : 'near-expiry'}`}><i />{alert.expired ? 'Expired' : alert.missing ? 'Date missing' : alert.days <= 0 ? 'Expires today' : `${alert.days} days left`}</span></div>)}</div></section>}
-    <section className="workspace-card inventory-panel">
-      <div className="inventory-toolbar"><label className="search-box inventory-search"><Search size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search product, lot or barcode…" aria-label="Search inventory" /></label><label className="category-select"><span className="sr-only">Filter by category</span><select value={category} onChange={event => setCategory(event.target.value)}><option>All products</option>{categories.map(item => <option key={item}>{item}</option>)}</select><ChevronDown size={15} /></label></div>
-      {products.length ? <div className="table-scroll"><table className="data-table inventory-table"><thead><tr><th>PRODUCT</th><th>BARCODE</th><th>AVAILABLE</th><th>BATCHES / NEXT EXPIRY</th><th>SELLING PRICE</th><th>STATUS</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{products.map(product => {
-        const batches = getProductBatches(product).sort((first, second) => (first.expiry || '9999-12-31').localeCompare(second.expiry || '9999-12-31'));
-        const nextBatch = batches.find(batch => Number(batch.stock) > 0) || batches[0];
-        const physical = getPhysicalStock(product);
-        const missingExpiryStock = batches.filter(batch => !batch.expiry).reduce((sum, batch) => sum + Number(batch.stock || 0), 0);
-        const noSellableStock = product.stock <= 0 && physical > 0;
-        const expiryMissing = noSellableStock && missingExpiryStock > 0;
-        const expiredOnly = noSellableStock && !expiryMissing;
-        const statusText = expiryMissing ? 'Expiry date missing' : expiredOnly ? 'Expired stock only' : product.stock <= 0 ? 'Out of stock' : product.stock <= 5 ? 'Low stock' : 'In stock';
-        const statusTone = expiredOnly ? 'out-pill' : expiryMissing || product.stock <= 5 ? 'low-pill' : product.stock <= 0 ? 'out-pill' : 'in-stock-pill';
-        const batchAlert = nextBatch && expiryAlerts.find(alert => alert.product.id === product.id && alert.batch.id === nextBatch.id);
-        return <tr key={product.id}><td><div className="inventory-product"><ProductVisual product={product} small /><span><b>{product.name}</b><small>{product.brand || product.category} · {product.category}</small></span></div></td><td className="barcode-cell">{product.barcode || '—'}</td><td><b className={product.stock <= 5 ? 'stock-number low' : 'stock-number'}>{product.stock}</b><span className="units-label"> units</span>{physical > product.stock && <small className="expired-stock-note">{physical - product.stock} held from sale</small>}</td><td><span className="batch-count">{batches.length} lot{batches.length === 1 ? '' : 's'}</span>{nextBatch && <small className={`next-expiry ${batchAlert?.expired ? 'expired' : batchAlert?.missing ? 'missing' : batchAlert ? 'near-expiry' : ''}`}>{nextBatch.lotNumber} · {batchAlert?.missing ? 'No expiry recorded' : readableDate(nextBatch.expiry)}</small>}</td><td><b>{format(product.price)}</b></td><td><span className={`status-pill ${statusTone}`}><i />{statusText}</span></td><td><div className="inventory-row-actions"><button className="edit-product-button" onClick={() => onManageBatches(product)}>Batches</button><button className="edit-product-button" onClick={() => onEdit(product)}>Edit</button></div></td></tr>;
-      })}</tbody></table></div> : <EmptyState icon={Package} title="No matching products" detail="Try another filter or add a product to your shop." action="Add product" onAction={onAdd} />}
-      <div className="inventory-footer"><span>Showing {products.length} of {totalCount} products</span><span>Checkout removes stock from the earliest unexpired lot first (FEFO).</span></div>
-    </section>
-  </section>;
-}
-
-function SalesPage({ role, currentStaff, sales, todaySales, todayTotal }) {
-  const visibleSales = role === 'owner' ? sales : sales.filter(sale => sale.cashier === currentStaff.name);
-  const title = role === 'owner' ? 'Sales' : 'My sales';
-  return <section className="page-section">
-    <div className="page-heading"><div><div className="eyebrow"><TrendingUp size={13} /> TRANSACTION HISTORY</div><h1>{title}</h1><p>{role === 'owner' ? 'Review transactions from every cashier.' : 'Review the sales recorded on your cashier account.'}</p></div><div className="sales-today-card"><span>Today’s total</span><b>{format(role === 'owner' ? todayTotal : todaySales.filter(sale => sale.cashier === currentStaff.name).reduce((sum, sale) => sum + Number(sale.total || 0), 0))}</b><small>{role === 'owner' ? todaySales.length : todaySales.filter(sale => sale.cashier === currentStaff.name).length} transactions</small></div></div>
-    <section className="workspace-card sales-panel"><div className="panel-heading sales-panel-heading"><div><h2>All transactions</h2><p>Completed sales appear here after payment is confirmed.</p></div><span className="sales-count-chip">{visibleSales.length} records</span></div>
-      {visibleSales.length ? <div className="table-scroll"><table className="data-table sales-table"><thead><tr><th>SALE</th><th>DATE & TIME</th><th>CASHIER</th><th>ITEMS</th><th>PAYMENT</th><th>TOTAL</th><th>STATUS</th></tr></thead><tbody>{visibleSales.map(sale => <tr key={sale.id}><td><b className="sale-id">{sale.id}</b><small className="sale-customer">{sale.customer || 'Walk-in customer'}</small></td><td><b>{sale.date === localDateKey() ? 'Today' : sale.date}</b><small className="table-subline">{sale.time}</small></td><td>{sale.cashier}</td><td>{sale.itemCount}</td><td><span className="payment-tag">{sale.payment === 'Mobile Money' ? 'MoMo' : sale.payment}</span></td><td><b>{format(sale.total)}</b></td><td><span className="status-pill in-stock-pill"><i />Completed</span></td></tr>)}</tbody></table></div> : <EmptyState icon={ShoppingBag} title="No sales yet" detail="Completed transactions will show here." />}
-    </section>
-  </section>;
-}
-
-function InvoicesPage({ role, currentStaff, sales, onViewInvoice }) {
-  const [search, setSearch] = useState('');
-  const visibleInvoices = (role === 'owner' ? sales : sales.filter(sale => sale.cashier === currentStaff.name))
-    .filter(sale => `${sale.invoiceNumber || sale.id} ${sale.customer || ''} ${sale.cashier || ''}`.toLowerCase().includes(search.toLowerCase().trim()));
-  const todayInvoices = visibleInvoices.filter(sale => sale.date === localDateKey());
-  const collectedToday = todayInvoices.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
-  const averageInvoice = todayInvoices.length ? collectedToday / todayInvoices.length : 0;
-  return <section className="page-section">
-    <div className="page-heading"><div><div className="eyebrow"><FileText size={13} /> BILLING WORKSPACE</div><h1>Invoices &amp; billing</h1><p>{role === 'owner' ? 'Review customer invoices and payments across the shop.' : 'View invoices created from your completed sales.'}</p></div><button className="outline-button invoice-export-button" onClick={() => downloadSalesCsv(visibleInvoices, 'posi-invoices')}><Download size={15} /> Export invoices</button></div>
-    <div className="invoice-metrics"><article><span className="invoice-metric-icon"><FileText size={17} /></span><span><small>INVOICES TODAY</small><b>{todayInvoices.length}</b></span></article><article><span className="invoice-metric-icon collected"><Wallet size={17} /></span><span><small>COLLECTED TODAY</small><b>{format(collectedToday)}</b></span></article><article><span className="invoice-metric-icon average"><TrendingUp size={17} /></span><span><small>AVERAGE INVOICE</small><b>{format(averageInvoice)}</b></span></article></div>
-    <section className="workspace-card invoice-panel">
-      <div className="panel-heading invoice-panel-heading"><div><h2>{role === 'owner' ? 'All invoices' : 'My invoices'}</h2><p>Each paid sale creates a printable invoice.</p></div><span className="sales-count-chip">{visibleInvoices.length} invoices</span></div>
-      <div className="invoice-toolbar"><label className="search-box invoice-search"><Search size={16} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search invoice, customer or cashier…" aria-label="Search invoices" /></label><span className="paid-filter"><i /> Paid invoices</span></div>
-      {visibleInvoices.length ? <div className="table-scroll"><table className="data-table invoice-table"><thead><tr><th>INVOICE</th><th>ISSUED</th><th>CUSTOMER</th><th>CASHIER</th><th>PAYMENT</th><th>AMOUNT</th><th>STATUS</th><th></th></tr></thead><tbody>{visibleInvoices.map(sale => <tr key={sale.id}><td><b className="invoice-number">{sale.invoiceNumber || sale.id.replace('POS', 'INV')}</b><small className="table-subline">{sale.id}</small></td><td><b>{sale.date === localDateKey() ? 'Today' : readableDate(sale.date)}</b><small className="table-subline">{sale.time}</small></td><td>{sale.customer || 'Walk-in customer'}</td><td>{sale.cashier}</td><td><span className="payment-tag">{sale.payment === 'Mobile Money' ? 'MoMo' : sale.payment}</span></td><td><b>{format(sale.total)}</b></td><td><span className="status-pill in-stock-pill"><i />Paid</span></td><td><button className="invoice-view-button" onClick={() => onViewInvoice(sale)}>View</button></td></tr>)}</tbody></table></div> : <EmptyState icon={FileText} title="No invoices found" detail="Completed and paid sales will appear here as invoices." />}
-      <div className="inventory-footer"><span>Showing {visibleInvoices.length} invoices</span><span>Invoices are saved with the cashier and payment details.</span></div>
-    </section>
-  </section>;
-}
-
-function InvoiceDetailsModal({ sale, onClose, onPrintReceipt }) {
-  const items = Array.isArray(sale.items) ? sale.items : [];
-  const subtotal = Number(sale.subtotal ?? (Number(sale.total || 0) + Number(sale.discountAmount || 0)));
-  const discountAmount = Number(sale.discountAmount || 0);
-  return <div className="modal-backdrop invoice-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="invoice-detail-modal" role="dialog" aria-modal="true" aria-labelledby="invoice-detail-title">
-    <header className="invoice-detail-header"><div className="invoice-brand"><span className="brand-mark"><Plus size={18} strokeWidth={3} /></span><span><b>Green Cross Pharmacy</b><small>Accra, Ghana · Customer invoice</small></span></div><button className="modal-close" onClick={onClose} aria-label="Close invoice"><X size={18} /></button></header>
-    <div className="invoice-detail-title-row"><div><span className="modal-eyebrow">PAID INVOICE</span><h2 id="invoice-detail-title">{sale.invoiceNumber || sale.id.replace('POS', 'INV')}</h2><p>Issued {readableDate(sale.date)} at {sale.time}</p></div><span className="status-pill in-stock-pill"><i />Paid</span></div>
-    <div className="invoice-parties"><div><small>BILL TO</small><b>{sale.customer || 'Walk-in customer'}</b></div><div><small>ISSUED BY</small><b>{sale.cashier}</b></div><div><small>PAYMENT</small><b>{sale.payment === 'Mobile Money' ? 'Mobile Money (MoMo)' : sale.payment}</b></div></div>
-    <div className="table-scroll"><table className="invoice-line-table"><thead><tr><th>PRODUCT</th><th>QTY</th><th>UNIT PRICE</th><th>LINE TOTAL</th></tr></thead><tbody>{items.length ? items.map((item, index) => <tr key={`${item.productId || item.name}-${index}`}><td>{item.name}{item.batchLots?.length > 0 && <small className="invoice-lot-note">Lot{item.batchLots.length === 1 ? '' : 's'}: {item.batchLots.map(batch => `${batch.lotNumber} × ${batch.quantity}`).join(', ')}</small>}</td><td>{item.quantity}</td><td>{format(item.unitPrice)}</td><td>{format(item.lineTotal ?? item.quantity * item.unitPrice)}</td></tr>) : <tr><td colSpan="4" className="no-line-items">Item details were not saved for this older demo transaction.</td></tr>}</tbody></table></div>
-    <div className="invoice-totals"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{discountAmount > 0 && <div><span>Discount</span><b>− {format(discountAmount)}</b></div>}<div className="invoice-grand-total"><span>Total paid</span><b>{format(sale.total)}</b></div></div>
-    <footer className="invoice-detail-footer"><span><ShieldCheck size={13} />Thank you for choosing Green Cross Pharmacy.</span><div className="invoice-detail-actions"><button className="outline-button" onClick={() => onPrintReceipt(sale)}><Printer size={14} /> Print receipt</button><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Print invoice</button></div></footer>
-  </section></div>;
-}
-
-function ReceiptPrintModal({ sale, onClose }) {
-  const items = Array.isArray(sale.items) ? sale.items : [];
-  const subtotal = Number(sale.subtotal ?? (Number(sale.total || 0) + Number(sale.discountAmount || 0)));
-  const discountAmount = Number(sale.discountAmount || 0);
-  return <div className="modal-backdrop receipt-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="receipt-paper" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
-    <button className="modal-close receipt-close" onClick={onClose} aria-label="Close receipt"><X size={17} /></button>
-    <header className="receipt-brand"><span className="brand-mark"><Plus size={17} strokeWidth={3} /></span><span><b>Green Cross Pharmacy</b><small>Accra, Ghana</small></span></header>
-    <div className="receipt-heading"><span>PAYMENT RECEIPT</span><h2 id="receipt-title">{sale.invoiceNumber || sale.id.replace('POS', 'INV')}</h2><small>{readableDate(sale.date)} · {sale.time}</small></div>
-    <div className="receipt-meta"><div><span>Customer</span><b>{sale.customer || 'Walk-in customer'}</b></div><div><span>Cashier</span><b>{sale.cashier}</b></div><div><span>Payment</span><b>{sale.payment === 'Mobile Money' ? 'Mobile Money (MoMo)' : sale.payment}</b></div></div>
-    <div className="receipt-item-list">{items.length ? items.map((item, index) => <div className="receipt-item" key={`${item.productId || item.name}-${index}`}><div className="receipt-item-main"><b>{item.name}</b><strong>{format(item.lineTotal ?? item.quantity * item.unitPrice)}</strong></div><small>{item.quantity} × {format(item.unitPrice)}</small>{item.batchLots?.length > 0 && <small className="receipt-lot-note">Lot{item.batchLots.length === 1 ? '' : 's'}: {item.batchLots.map(batch => `${batch.lotNumber} × ${batch.quantity}`).join(', ')}</small>}</div>) : <p className="receipt-empty-lines">Item details were not saved for this older demo transaction.</p>}</div>
-    <div className="receipt-totals"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{discountAmount > 0 && <div><span>Discount</span><b>− {format(discountAmount)}</b></div>}<div className="receipt-grand-total"><span>Total paid</span><b>{format(sale.total)}</b></div></div>
-    <footer className="receipt-footer"><p>Thank you for choosing Green Cross Pharmacy.</p><small>Sale {sale.id} · Demo receipt</small><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Print receipt</button></footer>
-  </section></div>;
-}
-
-function downloadSalesCsv(sales, prefix = 'posi-sales') {
-  const header = ['Invoice', 'Date', 'Time', 'Cashier', 'Customer', 'Item count', 'Item details', 'Payment', 'Subtotal', 'Discount', 'Total'];
-  const rows = sales.map(sale => [
-    sale.invoiceNumber || sale.id.replace('POS', 'INV'),
-    sale.date,
-    sale.time,
-    sale.cashier,
-    sale.customer || 'Walk-in customer',
-    sale.itemCount,
-    (sale.items || []).map(item => `${item.name} x${item.quantity} @ ${format(item.unitPrice)}${item.batchLots?.length ? ` [lots: ${item.batchLots.map(batch => `${batch.lotNumber} x${batch.quantity}`).join('; ')}]` : ''}`).join('; '),
-    sale.payment,
-    Number(sale.subtotal ?? sale.total ?? 0).toFixed(2),
-    Number(sale.discountAmount || 0).toFixed(2),
-    Number(sale.total || 0).toFixed(2),
-  ]);
-  const csv = [header, ...rows].map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${prefix}-${localDateKey()}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function ReportsPage({ sales }) {
-  const today = new Date();
-  const weekDays = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(today);
-    date.setDate(date.getDate() - (6 - index));
-    const key = localDateKey(date);
-    const daySales = sales.filter(sale => sale.date === key);
-    return { date, key, sales: daySales, total: daySales.reduce((sum, sale) => sum + Number(sale.total || 0), 0) };
-  });
-  const recentSales = sales.filter(sale => sale.date >= weekDays[0].key && sale.date <= localDateKey(today));
-  const weekTotal = recentSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
-  const todaySales = recentSales.filter(sale => sale.date === localDateKey(today));
-  const maxDayTotal = Math.max(1, ...weekDays.map(day => day.total));
-  const averageSale = recentSales.length ? weekTotal / recentSales.length : 0;
-  const paymentBreakdown = ['Cash', 'Mobile Money', 'Card'].map(method => ({ method, count: recentSales.filter(sale => sale.payment === method).length, total: recentSales.filter(sale => sale.payment === method).reduce((sum, sale) => sum + Number(sale.total || 0), 0) }));
-  const totalPaymentSales = paymentBreakdown.reduce((sum, item) => sum + item.total, 0);
-  const productTotals = new Map();
-  recentSales.forEach(sale => (sale.items || []).forEach(item => {
-    const current = productTotals.get(item.name) || { name: item.name, quantity: 0, revenue: 0 };
-    current.quantity += Number(item.quantity || 0);
-    current.revenue += Number(item.lineTotal || item.quantity * item.unitPrice || 0);
-    productTotals.set(item.name, current);
+function DashboardOwner({sales,todaySales,products,customers,employees,activities,messages,giftCards,setView}){
+  const lowStock = products.filter(p=>p.stock<=5);
+  const totalToday = todaySales.reduce((s,x)=>s+Number(x.total||0),0);
+  const weekSales = sales.filter(s=>{ const d=new Date(); d.setDate(d.getDate()-7); return s.date>=d.toISOString().slice(0,10) });
+  const weekTotal = weekSales.reduce((s,x)=>s+Number(x.total||0),0);
+  const accountReceivable = customers.reduce((s,c)=>s+Number(c.balance||0),0);
+  const giftLiability = giftCards.filter(g=>g.status==='active').reduce((s,g)=>s+Number(g.balance||0),0);
+  const byPayment = paymentMethods.map(pm=>({
+    method:pm.id,
+    total: sales.filter(s=>s.payment===pm.id).reduce((s,x)=>s+Number(x.total||0),0),
+    count: sales.filter(s=>s.payment===pm.id).length
   }));
-  const topProducts = [...productTotals.values()].sort((first, second) => second.quantity - first.quantity).slice(0, 5);
-  return <section className="page-section">
-    <div className="page-heading"><div><div className="eyebrow"><BarChart3 size={13} /> BUSINESS REPORTS · LAST 7 DAYS</div><h1>Reports</h1><p>Track revenue, payment mix, and products sold at Green Cross Pharmacy.</p></div><button className="outline-button report-export-button" onClick={() => downloadSalesCsv(recentSales)}><Download size={15} /> Export CSV</button></div>
-    <div className="metrics-grid report-metrics-grid">
-      <article className="metric-card"><span className="metric-icon green"><Wallet size={18} /></span><span className="metric-label">Revenue · 7 days</span><b className="metric-value">{format(weekTotal)}</b><span className="metric-note">{recentSales.length} paid invoices</span></article>
-      <article className="metric-card"><span className="metric-icon blue"><FileText size={18} /></span><span className="metric-label">Invoices today</span><b className="metric-value">{todaySales.length}</b><span className="metric-note">{format(todaySales.reduce((sum, sale) => sum + Number(sale.total || 0), 0))} collected</span></article>
-      <article className="metric-card"><span className="metric-icon violet"><TrendingUp size={18} /></span><span className="metric-label">Average invoice</span><b className="metric-value">{format(averageSale)}</b><span className="metric-note">Based on the last 7 days</span></article>
-    </div>
-    <div className="reports-grid">
-      <section className="workspace-card report-panel sales-chart-panel"><div className="panel-heading"><div><h2>Sales over time</h2><p>Paid invoice totals, by day.</p></div><span className="chart-total"><small>7-DAY TOTAL</small><b>{format(weekTotal)}</b></span></div>
-        <div className="chart-legend"><span><i /> Daily revenue</span><span>GH₵</span></div>
-        <div className="sales-bar-chart">{weekDays.map(day => <div className="sales-bar-column" key={day.key}><span className="bar-value">{day.total ? format(day.total) : ''}</span><div className="bar-track"><i style={{ height: `${day.total ? Math.max(7, (day.total / maxDayTotal) * 100) : 0}%` }} /></div><small>{day.date.toLocaleDateString('en-GH', { weekday: 'short' })}</small></div>)}</div>
-      </section>
-      <section className="workspace-card report-panel payment-report"><div className="panel-heading"><div><h2>Payment methods</h2><p>How customers paid.</p></div><CreditCard size={17} className="report-heading-icon" /></div>
-        <div className="payment-report-list">{paymentBreakdown.map(item => <div className="payment-report-row" key={item.method}><div className="payment-report-label"><span>{item.method === 'Mobile Money' ? 'Mobile Money' : item.method}</span><b>{format(item.total)}</b></div><div className="payment-progress"><i style={{ width: `${totalPaymentSales ? (item.total / totalPaymentSales) * 100 : 0}%` }} /></div><small>{item.count} {item.count === 1 ? 'invoice' : 'invoices'}</small></div>)}</div>
-      </section>
-      <section className="workspace-card report-panel top-products-panel"><div className="panel-heading"><div><h2>Best-selling products</h2><p>Units sold from recorded invoices.</p></div><Package size={17} className="report-heading-icon" /></div>
-        {topProducts.length ? <div className="top-products-list">{topProducts.map((product, index) => <div className="top-product-row" key={product.name}><span className="top-product-rank">{String(index + 1).padStart(2, '0')}</span><span className="top-product-copy"><b>{product.name}</b><small>{product.quantity} units sold</small></span><strong>{format(product.revenue)}</strong></div>)}</div> : <div className="report-empty"><ShoppingBag size={18} /><span>Product sales details will appear after invoices are recorded.</span></div>}
-      </section>
-      <section className="report-note-card"><span className="tip-icon"><ShieldCheck size={18} /></span><div><b>Report data</b><p>Reports use completed invoices saved in this demo browser. Export the current 7-day view as a CSV file.</p></div></section>
-    </div>
-  </section>;
-}
+  const topProducts = (()=>{ const m=new Map(); sales.forEach(s=>s.items?.forEach(it=>{ const cur=m.get(it.name)||{name:it.name,qty:0,rev:0}; cur.qty+=it.qty; cur.rev+=it.lineTotal; m.set(it.name,cur)})); return [...m.values()].sort((a,b)=>b.qty-a.qty).slice(0,5) })();
 
-function shiftDuration(entry) {
-  if (!entry?.clockIn) return '—';
-  const toMinutes = value => {
-    const [hours, minutes] = value.split(':').map(Number);
-    return hours * 60 + minutes;
-  };
-  const endTime = entry.clockOut || clockTime(new Date());
-  const minutes = Math.max(0, toMinutes(endTime) - toMinutes(entry.clockIn));
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
+  const combinedTotal = sales.reduce((s,x)=>s+Number(x.total||0),0);
 
-function statusClass(status) {
-  if (status === 'On shift') return 'on-shift';
-  if (status === 'Approved') return 'leave-approved';
-  if (status === 'Declined') return 'leave-declined';
-  if (status === 'Pending') return 'leave-pending';
-  return 'clocked-out';
-}
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> OWNER OVERVIEW · {fullDate().toUpperCase()}</div><h1>Shop overview — combined accounts</h1><p>All cashier sales, accounts, and inventory combined to owner. Monitor cash, MoMo, check, gift, and account receivables.</p></div><button className="btn primary" onClick={()=>setView('pos')}><ShoppingCart size={16}/> New Sale</button></div>
 
-function AttendancePage({ role, currentStaff, attendance, leaveRequests, onClockToggle, onSubmitLeave, onReviewLeave }) {
-  return role === 'owner'
-    ? <OwnerAttendancePage attendance={attendance} leaveRequests={leaveRequests} onReviewLeave={onReviewLeave} />
-    : <CashierAttendancePage currentStaff={currentStaff} attendance={attendance} leaveRequests={leaveRequests} onClockToggle={onClockToggle} onSubmitLeave={onSubmitLeave} />;
-}
-
-function OwnerAttendancePage({ attendance, leaveRequests, onReviewLeave }) {
-  const today = localDateKey();
-  const todaysRecords = attendance.filter(record => record.date === today);
-  const onShiftCount = todaysRecords.filter(record => record.status === 'On shift').length;
-  const pendingRequests = leaveRequests.filter(request => request.status === 'Pending');
-  const recentAttendance = [...attendance].sort((first, second) => `${second.date} ${second.clockIn || ''}`.localeCompare(`${first.date} ${first.clockIn || ''}`)).slice(0, 12);
-  const metrics = [
-    { label: 'Shifts recorded today', value: String(todaysRecords.length), Icon: Users, tone: 'blue' },
-    { label: 'Currently on shift', value: String(onShiftCount), Icon: Clock3, tone: 'green' },
-    { label: 'Leave to review', value: String(pendingRequests.length), Icon: CalendarDays, tone: pendingRequests.length ? 'amber' : 'violet' },
-  ];
-  return <section className="page-section">
-    <div className="page-heading"><div><div className="eyebrow"><CalendarDays size={13} /> PEOPLE &amp; SCHEDULING</div><h1>Attendance &amp; leave</h1><p>Monitor staff shifts and manage leave requests.</p></div><span className="open-shift-badge"><span />Today · {readableDate(today)}</span></div>
-    <div className="attendance-metrics">{metrics.map(({ label, value, Icon, tone }) => <article className="attendance-metric" key={label}><span className={`metric-icon ${tone}`}><Icon size={17} /></span><span><small>{label}</small><b>{value}</b></span></article>)}</div>
-    <div className="attendance-owner-grid">
-      <section className="workspace-card attendance-panel"><div className="panel-heading"><div><h2>Today's attendance</h2><p>Clock-in status for your cashier team.</p></div><span className="activity-live"><i /> TODAY</span></div>
-        <div className="table-scroll"><table className="data-table attendance-table"><thead><tr><th>TEAM MEMBER</th><th>STATUS</th><th>CLOCK IN</th><th>CLOCK OUT</th><th>HOURS</th></tr></thead><tbody>{cashiers.map(cashier => {
-          const entry = todaysRecords.filter(record => record.staff === cashier.name).at(-1);
-          const status = entry?.status || 'Not clocked in';
-          return <tr key={cashier.name}><td><div className="team-member"><span className="avatar team-avatar">{cashier.initials}</span><span><b>{cashier.name}</b><small>{cashier.title} · {cashier.shift}</small></span></div></td><td><span className={`status-pill ${statusClass(status)}`}><i />{status}</span></td><td>{entry?.clockIn || '—'}</td><td>{entry?.clockOut || '—'}</td><td><b>{entry ? shiftDuration(entry) : '—'}</b></td></tr>;
-        })}</tbody></table></div>
-        <div className="attendance-panel-foot"><Clock3 size={13} />Times are saved locally in this demo.</div>
-      </section>
-      <section className="workspace-card leave-review-panel"><div className="panel-heading"><div><h2>Leave requests</h2><p>Review team requests and dates.</p></div><span className="request-count">{pendingRequests.length} pending</span></div>
-        {leaveRequests.length ? <div className="leave-request-list">{leaveRequests.map(request => <article className="leave-request-card" key={request.id}><div className="leave-request-top"><span className="leave-request-icon"><CalendarDays size={15} /></span><span className="leave-request-person"><b>{request.staff}</b><small>{request.type}</small></span><span className={`status-pill ${statusClass(request.status)}`}><i />{request.status}</span></div><div className="leave-request-dates">{readableDate(request.startDate)} <ArrowRight size={12} /> {readableDate(request.endDate)}</div><p>{request.reason}</p>{request.status === 'Pending' && <div className="leave-review-actions"><button className="decline-leave-button" onClick={() => onReviewLeave(request.id, 'Declined')}>Decline</button><button className="approve-leave-button" onClick={() => onReviewLeave(request.id, 'Approved')}><Check size={13} /> Approve</button></div>}</article>)}</div> : <EmptyState icon={CalendarDays} title="No leave requests" detail="New staff requests will appear here." />}
-      </section>
-    </div>
-    <section className="workspace-card owner-attendance-history-panel"><div className="panel-heading"><div><h2>Recent attendance</h2><p>Clock-in and clock-out history for the team.</p></div><span className="sales-count-chip">{attendance.length} records</span></div>
-      {recentAttendance.length ? <div className="table-scroll"><table className="data-table attendance-history-table"><thead><tr><th>DATE</th><th>TEAM MEMBER</th><th>SHIFT STATUS</th><th>CLOCK IN</th><th>CLOCK OUT</th><th>HOURS</th></tr></thead><tbody>{recentAttendance.map(record => {
-        const staff = cashiers.find(cashier => cashier.name === record.staff) || { initials: 'ST', title: 'Staff' };
-        return <tr key={record.id}><td><b>{record.date === today ? 'Today' : readableDate(record.date)}</b></td><td><div className="team-member"><span className="avatar team-avatar">{staff.initials}</span><span><b>{record.staff}</b><small>{staff.title}</small></span></div></td><td><span className={`status-pill ${statusClass(record.status)}`}><i />{record.status}</span></td><td>{record.clockIn || '—'}</td><td>{record.clockOut || '—'}</td><td><b>{shiftDuration(record)}</b></td></tr>;
-      })}</tbody></table></div> : <EmptyState icon={Clock3} title="No attendance yet" detail="Cashier clock-in records will appear here." />}
-    </section>
-  </section>;
-}
-
-function CashierAttendancePage({ currentStaff, attendance, leaveRequests, onClockToggle, onSubmitLeave }) {
-  const today = localDateKey();
-  const myAttendance = attendance.filter(record => record.staff === currentStaff.name).sort((first, second) => second.date.localeCompare(first.date));
-  const todayEntry = myAttendance.find(record => record.date === today);
-  const myLeave = leaveRequests.filter(request => request.staff === currentStaff.name).sort((first, second) => second.submittedDate.localeCompare(first.submittedDate));
-  const pendingCount = myLeave.filter(request => request.status === 'Pending').length;
-  const shiftActive = todayEntry?.status === 'On shift';
-  const shiftComplete = todayEntry?.status === 'Clocked out';
-  return <section className="page-section">
-    <div className="page-heading"><div><div className="eyebrow"><CalendarDays size={13} /> MY STAFF WORKSPACE</div><h1>Attendance &amp; leave</h1><p>Clock your shift and send leave requests to the owner.</p></div><span className="open-shift-badge"><span />{shiftActive ? 'On shift' : shiftComplete ? 'Shift completed' : 'Not clocked in'}</span></div>
-    <div className="cashier-attendance-grid">
-      <section className="workspace-card clock-card"><div className="clock-card-top"><span className="clock-card-icon"><Clock3 size={19} /></span><span className={`status-pill ${statusClass(todayEntry?.status || 'Not clocked in')}`}><i />{todayEntry?.status || 'Not clocked in'}</span></div><span className="clock-card-label">TODAY'S SHIFT</span><b className="clock-card-time">{todayEntry?.clockIn || '—'} <span>→</span> {todayEntry?.clockOut || (shiftActive ? 'In progress' : '—')}</b><span className="clock-card-date">{displayDate(new Date())}{todayEntry ? ` · ${shiftDuration(todayEntry)}` : ''}</span><button className={`clock-action-button ${shiftActive ? 'clock-out-action' : ''}`} onClick={onClockToggle} disabled={shiftComplete}>{shiftActive ? 'Clock out' : shiftComplete ? 'Shift complete for today' : 'Clock in'}<ArrowRight size={15} /></button></section>
-      <section className="workspace-card leave-balance-card"><span className="leave-balance-icon"><CalendarDays size={18} /></span><span className="leave-balance-label">MY LEAVE REQUESTS</span><b>{myLeave.length}</b><small>{pendingCount ? `${pendingCount} waiting for owner review` : 'No requests awaiting review'}</small><span className="leave-balance-footer"><ShieldCheck size={13} />Owner will review your request.</span></section>
-    </div>
-    <div className="cashier-attendance-grid cashier-lower-grid">
-      <section className="workspace-card attendance-history-panel"><div className="panel-heading"><div><h2>My recent attendance</h2><p>Clock-in records for your account.</p></div></div>
-        {myAttendance.length ? <div className="table-scroll"><table className="data-table cashier-history-table"><thead><tr><th>DATE</th><th>CLOCK IN</th><th>CLOCK OUT</th><th>HOURS</th><th>STATUS</th></tr></thead><tbody>{myAttendance.slice(0, 7).map(record => <tr key={record.id}><td><b>{record.date === today ? 'Today' : readableDate(record.date)}</b></td><td>{record.clockIn}</td><td>{record.clockOut || '—'}</td><td>{shiftDuration(record)}</td><td><span className={`status-pill ${statusClass(record.status)}`}><i />{record.status}</span></td></tr>)}</tbody></table></div> : <EmptyState icon={Clock3} title="No attendance yet" detail="Clock in to start recording your shift." />}
-      </section>
-      <LeaveRequestForm onSubmit={onSubmitLeave} />
-      <section className="workspace-card cashier-leave-list"><div className="panel-heading"><div><h2>My leave requests</h2><p>See approval status and requested dates.</p></div></div>
-        {myLeave.length ? <div className="my-leave-rows">{myLeave.map(request => <div className="my-leave-row" key={request.id}><span className="leave-request-icon"><CalendarDays size={15} /></span><span className="my-leave-copy"><b>{request.type}</b><small>{readableDate(request.startDate)} – {readableDate(request.endDate)} · {request.reason}</small></span><span className={`status-pill ${statusClass(request.status)}`}><i />{request.status}</span></div>)}</div> : <div className="report-empty"><CalendarDays size={17} /><span>You have not requested leave yet.</span></div>}
-      </section>
-    </div>
-  </section>;
-}
-
-function LeaveRequestForm({ onSubmit }) {
-  const [type, setType] = useState('Annual leave');
-  const [startDate, setStartDate] = useState(() => dateAfterDays(1));
-  const [endDate, setEndDate] = useState(() => dateAfterDays(1));
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState('');
-  const submit = event => {
-    event.preventDefault();
-    if (!startDate || !endDate || endDate < startDate) {
-      setError('Choose an end date on or after the start date.');
-      return;
-    }
-    if (!reason.trim()) {
-      setError('Please add a short reason for your request.');
-      return;
-    }
-    onSubmit({ type, startDate, endDate, reason: reason.trim() });
-    setReason('');
-    setError('');
-  };
-  return <section className="workspace-card leave-form-panel"><div className="panel-heading"><div><h2>Request leave</h2><p>Send a date range and reason to the owner.</p></div><span className="leave-form-icon"><CalendarDays size={16} /></span></div>
-    <form className="leave-request-form" onSubmit={submit}><label>Leave type<select value={type} onChange={event => setType(event.target.value)}><option>Annual leave</option><option>Sick leave</option><option>Personal leave</option><option>Other</option></select></label><div className="leave-date-fields"><label>Start date<input type="date" min={localDateKey()} value={startDate} onChange={event => { setStartDate(event.target.value); if (endDate < event.target.value) setEndDate(event.target.value); }} required /></label><label>End date<input type="date" min={startDate || localDateKey()} value={endDate} onChange={event => setEndDate(event.target.value)} required /></label></div><label>Reason<textarea value={reason} onChange={event => { setReason(event.target.value); setError(''); }} placeholder="Add a brief reason" rows="3" maxLength="180" /></label>{error && <span className="leave-form-error">{error}</span>}<button className="primary-button leave-submit-button" type="submit"><CalendarDays size={14} />Send request</button></form>
-  </section>;
-}
-
-function EmptyState({ icon: Icon, title, detail, action, onAction }) {
-  return <div className="empty-state"><span className="empty-state-icon"><Icon size={23} /></span><b>{title}</b><p>{detail}</p>{action && <button className="outline-button" onClick={onAction}><Plus size={15} />{action}</button>}</div>;
-}
-
-function ProductFormModal({ initialProduct, onClose, onSave, onManageBatches }) {
-  const firstBatch = initialProduct ? getProductBatches(initialProduct)[0] : null;
-  const [name, setName] = useState(initialProduct?.name || '');
-  const [brand, setBrand] = useState(initialProduct?.brand || '');
-  const [category, setCategory] = useState(initialProduct?.category || categories[0]);
-  const [price, setPrice] = useState(initialProduct?.price ?? '');
-  const [stock, setStock] = useState(initialProduct ? getPhysicalStock(initialProduct) : '');
-  const [barcode, setBarcode] = useState(initialProduct?.barcode || '');
-  const [lotNumber, setLotNumber] = useState(firstBatch?.lotNumber || '');
-  const [expiry, setExpiry] = useState(normalizeExpiryDate(firstBatch?.expiry || initialProduct?.expiry || ''));
-  const [image, setImage] = useState(initialProduct?.image || '');
-  const [imageError, setImageError] = useState('');
-  const [savingPhoto, setSavingPhoto] = useState(false);
-
-  const changePhoto = async event => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setImageError('Choose an image file.');
-      return;
-    }
-    setSavingPhoto(true);
-    setImageError('');
-    try {
-      const optimized = await optimizePhoto(file);
-      setImage(optimized);
-    } catch {
-      setImageError('Could not load that image. Try another photo.');
-    } finally {
-      setSavingPhoto(false);
-      event.target.value = '';
-    }
-  };
-
-  const submit = event => {
-    event.preventDefault();
-    if (!name.trim() || price === '' || Number(price) < 0) return;
-    if (!initialProduct && (!lotNumber.trim() || !expiry || stock === '' || Number(stock) < 0)) return;
-    const batches = initialProduct ? getProductBatches(initialProduct) : [{
-      id: `batch-${Date.now()}`,
-      lotNumber: lotNumber.trim(),
-      stock: Math.floor(Number(stock)),
-      expiry: normalizeExpiryDate(expiry),
-    }];
-    const sortedBatches = [...batches].sort((first, second) => (first.expiry || '9999-12-31').localeCompare(second.expiry || '9999-12-31'));
-    const product = {
-      ...(initialProduct || {}),
-      id: initialProduct?.id || `product-${Date.now()}`,
-      name: name.trim(),
-      brand: brand.trim() || category,
-      category,
-      price: Number(price),
-      stock: batches.reduce((sum, batch) => sum + Number(batch.stock || 0), 0),
-      batches,
-      batchNumber: sortedBatches[0]?.lotNumber || '',
-      barcode: barcode.trim(),
-      expiry: sortedBatches[0]?.expiry || '',
-      image,
-      color: initialProduct?.color || ['mint', 'peach', 'lavender', 'blue'][Math.floor(Math.random() * 4)],
-      icon: initialProduct?.icon || 'pill',
-      rx: initialProduct?.rx || false,
-    };
-    onSave(product);
-  };
-
-  return <div className="modal-backdrop product-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="product-form-modal" role="dialog" aria-modal="true" aria-labelledby="product-form-title">
-    <div className="form-modal-header"><span className="form-modal-icon"><PackagePlus size={20} /></span><span className="form-modal-heading"><span className="modal-eyebrow">INVENTORY</span><h2 id="product-form-title">{initialProduct ? 'Edit product' : 'Add a product'}</h2><p>Enter the details your cashier needs at checkout.</p></span><button className="modal-close" onClick={onClose} aria-label="Close product form"><X size={19} /></button></div>
-    <form onSubmit={submit}>
-      <div className="product-form-body">
-        <div className="photo-field"><span className="form-label">Product photo <small>Optional</small></span><div className={`photo-drop ${image ? 'has-photo' : ''}`}>
-          {image ? <img src={image} alt={name ? `${name} photo preview` : 'Product photo preview'} /> : <span className="photo-placeholder"><ImagePlus size={23} /><b>Snap a photo or upload</b><small>On a phone, choose the camera to take a picture.</small></span>}
-          <label className="photo-button" htmlFor="product-photo"><Camera size={15} />{savingPhoto ? 'Preparing…' : image ? 'Change photo' : 'Take photo / upload'}<input id="product-photo" type="file" accept="image/*" capture="environment" onChange={changePhoto} disabled={savingPhoto} /></label>
-          {image && <button type="button" className="remove-photo" aria-label="Remove product photo" onClick={() => setImage('')}><X size={14} /></button>}
-        </div><small className="field-hint">The photo is saved with the product name you enter below.</small>{imageError && <span className="field-error">{imageError}</span>}</div>
-        <div className="form-field"><label className="form-label" htmlFor="product-name">Product name <b>*</b></label><input id="product-name" value={name} onChange={event => setName(event.target.value)} placeholder="e.g. Paracetamol 500mg" required maxLength={70} /></div>
-        <div className="form-two-col"><div className="form-field"><label className="form-label" htmlFor="product-category">Category <b>*</b></label><span className="select-control"><select id="product-category" value={category} onChange={event => setCategory(event.target.value)}>{categories.map(item => <option key={item}>{item}</option>)}</select><ChevronDown size={15} /></span></div><div className="form-field"><label className="form-label" htmlFor="product-brand">Brand / size</label><input id="product-brand" value={brand} onChange={event => setBrand(event.target.value)} placeholder="e.g. 20 tablets" maxLength={60} /></div></div>
-        <div className="form-two-col"><div className="form-field"><label className="form-label" htmlFor="product-price">Selling price <b>*</b></label><span className="input-prefix"><span>GH₵</span><input id="product-price" type="number" inputMode="decimal" min="0" step="0.01" value={price} onChange={event => setPrice(event.target.value)} placeholder="0.00" required /></span></div><div className="form-field"><label className="form-label" htmlFor="product-barcode">Barcode <small>Optional</small></label><input id="product-barcode" value={barcode} onChange={event => setBarcode(event.target.value)} placeholder="Enter or scan a barcode" maxLength={40} /></div></div>
-        {initialProduct ? <div className="batch-summary-card"><span><Package size={17} /><b>{getPhysicalStock(initialProduct)} units</b><small>across {getProductBatches(initialProduct).length} batch{getProductBatches(initialProduct).length === 1 ? '' : 'es'}</small></span><button type="button" className="outline-button" onClick={() => onManageBatches(initialProduct)}>Manage batches <ArrowRight size={14} /></button></div> : <><div className="form-two-col"><div className="form-field"><label className="form-label" htmlFor="product-stock">Opening quantity <b>*</b></label><input id="product-stock" type="number" inputMode="numeric" min="0" step="1" value={stock} onChange={event => setStock(event.target.value)} placeholder="0" required /></div><div className="form-field"><label className="form-label" htmlFor="product-lot">Batch / lot number <b>*</b></label><input id="product-lot" value={lotNumber} onChange={event => setLotNumber(event.target.value)} placeholder="e.g. AMX-2026-01" required maxLength={40} /></div></div><div className="form-field"><label className="form-label" htmlFor="product-expiry">Batch expiry date <b>*</b></label><input id="product-expiry" type="date" value={expiry} onChange={event => setExpiry(event.target.value)} required /></div></>}
-        <p className="photo-storage-hint"><ShieldCheck size={14} />Product details and photo stay in this browser in the demo.</p>
+      <div className="grid metrics" style={{marginBottom:'14px'}}>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><Wallet size={16}/></div><span style={{fontSize:'10px',fontWeight:800,color:'#065f46',background:'#ecfdf5',padding:'3px 7px',borderRadius:'20px'}}>TODAY</span></div><div className="metric-label">Sales today (combined)</div><div className="metric-value">{format(totalToday)}</div><div className="metric-note"><em><TrendingUp size={12}/>+12%</em> {todaySales.length} transactions from all cashiers</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><DollarSign size={16}/></div></div><div className="metric-label">Total combined revenue</div><div className="metric-value">{format(combinedTotal)}</div><div className="metric-note">All payment methods combined to owner</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><PiggyBank size={16}/></div></div><div className="metric-label">Account receivables</div><div className="metric-value">{format(accountReceivable)}</div><div className="metric-note">{customers.filter(c=>c.balance>0).length} customers owe</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon violet"><Gift size={16}/></div></div><div className="metric-label">Gift card liability</div><div className="metric-value">{format(giftLiability)}</div><div className="metric-note">{giftCards.filter(g=>g.status==='active').length} active cards</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon blue"><Package size={16}/></div></div><div className="metric-label">Low stock items</div><div className="metric-value">{lowStock.length}</div><div className="metric-note">{lowStock.length?'Needs restock':'All stocked'}</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><Users size={16}/></div></div><div className="metric-label">Staff on shift</div><div className="metric-value">{employees.filter(e=>e.status==='On shift').length}</div><div className="metric-note">{employees.length} total employees</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon violet"><MessageSquare size={16}/></div></div><div className="metric-label">Unread messages</div><div className="metric-value">{messages.filter(m=>m.to==='all' || m.toName?.includes('All')).length}</div><div className="metric-note">Owner → employees</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><BarChart3 size={16}/></div></div><div className="metric-label">Week revenue</div><div className="metric-value">{format(weekTotal)}</div><div className="metric-note">{weekSales.length} invoices this week</div></div>
       </div>
-      <div className="form-modal-footer"><button type="button" className="cancel-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={savingPhoto}><Check size={16} />{initialProduct ? 'Save changes' : 'Save product'}</button></div>
-    </form>
-  </section></div>;
-}
 
-function BatchManagerModal({ product, onClose, onSave }) {
-  const [batches, setBatches] = useState(() => getProductBatches(product).map((batch, index) => ({ ...batch, id: batch.id || `batch-${product.id}-${index}` })));
-  const [lotNumber, setLotNumber] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [error, setError] = useState('');
-  const totalStock = batches.reduce((sum, batch) => sum + Math.max(0, Number(batch.stock || 0)), 0);
+      <div className="grid layout-2">
+        <div className="card">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div><h2>Combined account by payment</h2><p className="sub">Cash, MoMo, Check, Gift, Account → owner total</p></div><span className="chip"><Wallet size={14}/>{format(combinedTotal)} combined</span></div>
+          <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+            {byPayment.map(bp=>{
+              const pct = combinedTotal? (bp.total/combinedTotal*100):0;
+              return <div key={bp.method}><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'4px'}}><span style={{display:'flex',alignItems:'center',gap:'6px'}}><span className={`badge-pay ${bp.method.toLowerCase()}`}>{bp.method}</span> {bp.count} sales</span><b>{format(bp.total)}</b></div><div className="progress"><i style={{width:`${pct}%`}}/></div></div>
+            })}
+          </div>
+          <div style={{marginTop:'14px',padding:'10px',borderRadius:'8px',background:'#f6fffe',border:'1px solid #ccede8',fontSize:'11px',color:'#0f766e',display:'flex',gap:'8px'}}><ShieldCheck size={14}/><span><b>Owner combined control:</b> All cashier transactions automatically aggregate here. Account balances and gift liabilities tracked separately.</span></div>
+        </div>
 
-  const updateBatch = (id, field, value) => setBatches(previous => previous.map(batch => batch.id === id ? { ...batch, [field]: field === 'stock' ? Math.max(0, Math.floor(Number(value) || 0)) : field === 'expiry' ? normalizeExpiryDate(value) : value } : batch));
-  const addBatch = event => {
-    event.preventDefault();
-    const cleanLot = lotNumber.trim();
-    if (!cleanLot || !expiry || quantity === '' || Number(quantity) < 0) {
-      setError('Enter a lot number, expiry date and non-negative quantity.');
-      return;
-    }
-    if (batches.some(batch => batch.lotNumber.toLowerCase() === cleanLot.toLowerCase())) {
-      setError('That lot number is already listed for this product.');
-      return;
-    }
-    setBatches(previous => [...previous, { id: `batch-${Date.now()}`, lotNumber: cleanLot, stock: Math.floor(Number(quantity)), expiry: normalizeExpiryDate(expiry) }]);
-    setLotNumber('');
-    setQuantity('');
-    setExpiry('');
-    setError('');
-  };
-  const save = () => {
-    if (batches.some(batch => !batch.lotNumber.trim() || !batch.expiry)) {
-      setError('Every batch needs a lot number and expiry date.');
-      return;
-    }
-    const normalizedLots = batches.map(batch => batch.lotNumber.trim().toLowerCase());
-    if (new Set(normalizedLots).size !== normalizedLots.length) {
-      setError('Lot numbers must be unique within this product.');
-      return;
-    }
-    onSave(batches.map(batch => ({ ...batch, lotNumber: batch.lotNumber.trim(), stock: Math.max(0, Math.floor(Number(batch.stock) || 0)), expiry: normalizeExpiryDate(batch.expiry) })));
-  };
+        <div className="card">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div><h2>Cashier monitor</h2><p className="sub">Sales combined to owner account</p></div><button className="btn small ghost" onClick={()=>setView('invoices')}>View all <ArrowRight size={14}/></button></div>
+          <div className="table-wrap"><table><thead><tr><th>EMPLOYEE</th><th>TRANSACTIONS</th><th>TOTAL</th><th>STATUS</th></tr></thead><tbody>
+            {employees.filter(e=>e.role!=='owner').map(emp=>{
+              const empSales = sales.filter(s=>s.cashierId===emp.id || s.cashier===emp.name);
+              const empTotal = empSales.reduce((s,x)=>s+Number(x.total||0),0);
+              return <tr key={emp.id}><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className="avatar cashier" style={{width:'28px',height:'28px'}}>{emp.initials}</div><span><b style={{fontSize:'12px'}}>{emp.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{emp.role} · {emp.shift}</small></span></div></td><td>{empSales.length}</td><td><b>{format(empTotal)}</b></td><td><span className="status ok"><i/> {emp.status}</span></td></tr>
+            })}
+          </tbody></table></div>
+          <div style={{marginTop:'10px',fontSize:'11px',color:'#6b7d76',display:'flex',justifyContent:'space-between'}}><span>Combined to owner: {format(combinedTotal)}</span><span>{sales.length} total invoices</span></div>
+        </div>
 
-  return <div className="modal-backdrop batch-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="batch-manager-modal" role="dialog" aria-modal="true" aria-labelledby="batch-modal-title">
-    <div className="form-modal-header"><span className="form-modal-icon"><Package size={20} /></span><span className="form-modal-heading"><span className="modal-eyebrow">INVENTORY · LOT TRACKING</span><h2 id="batch-modal-title">Manage batches</h2><p>{product.name} · {totalStock} total units across {batches.length} lots</p></span><button className="modal-close" onClick={onClose} aria-label="Close batch manager"><X size={19} /></button></div>
-    <div className="batch-manager-body">
-      {batches.length ? <div className="batch-table-scroll"><table className="data-table batch-table"><thead><tr><th>BATCH / LOT</th><th>QUANTITY</th><th>EXPIRY DATE</th><th>STATUS</th><th><span className="sr-only">Remove batch</span></th></tr></thead><tbody>{batches.map(batch => {
-        const missing = !batch.expiry;
-        const expired = !missing && batch.expiry < localDateKey();
-        const days = missing ? Infinity : Math.ceil((new Date(`${batch.expiry}T00:00:00`) - new Date(`${localDateKey()}T00:00:00`)) / 86400000);
-        const status = expired ? 'Expired' : missing ? 'Missing expiry' : days <= 90 ? 'Near expiry' : 'Usable';
-        return <tr key={batch.id}><td><input aria-label={`${batch.lotNumber} lot number`} value={batch.lotNumber} onChange={event => updateBatch(batch.id, 'lotNumber', event.target.value)} /></td><td><input aria-label={`${batch.lotNumber} quantity`} type="number" inputMode="numeric" min="0" step="1" value={batch.stock} onChange={event => updateBatch(batch.id, 'stock', event.target.value)} /></td><td><input aria-label={`${batch.lotNumber} expiry date`} type="date" value={normalizeExpiryDate(batch.expiry)} onChange={event => updateBatch(batch.id, 'expiry', event.target.value)} /></td><td><span className={`expiry-status ${expired ? 'expired' : missing ? 'missing' : days <= 90 ? 'near-expiry' : 'usable'}`}><i />{status}</span></td><td><button type="button" className="batch-remove-button" onClick={() => setBatches(previous => previous.filter(entry => entry.id !== batch.id))} aria-label={`Remove batch ${batch.lotNumber}`}><X size={15} /></button></td></tr>;
-      })}</tbody></table></div> : <div className="report-empty"><Package size={18} /><span>No batches yet. Add a lot below to make this product available for sale.</span></div>}
-      <form className="add-batch-form" onSubmit={addBatch}><div className="batch-section-heading"><span><b>Add incoming batch</b><small>Stock receives its own lot and expiry record.</small></span><PackagePlus size={16} /></div><div className="batch-entry-fields"><label>Lot / batch number<input value={lotNumber} onChange={event => { setLotNumber(event.target.value); setError(''); }} placeholder="e.g. AMX-2026-02" maxLength={40} /></label><label>Quantity<input type="number" inputMode="numeric" min="0" step="1" value={quantity} onChange={event => { setQuantity(event.target.value); setError(''); }} placeholder="0" /></label><label>Expiry date<input type="date" value={expiry} onChange={event => { setExpiry(event.target.value); setError(''); }} /></label><button type="submit" className="outline-button"><Plus size={15} />Add lot</button></div>{error && <span className="batch-form-error">{error}</span>}</form>
-      <p className="batch-fefo-note"><ShieldCheck size={14} />Checkout uses the earliest unexpired batch first. Expired units remain visible here, but cannot be sold.</p>
+        <div className="card">
+          <h2>Recent activity</h2><p className="sub">Latest shop updates</p>
+          <div style={{marginTop:'10px',display:'flex',flexDirection:'column',gap:'8px'}}>
+            {activities.slice(0,5).map(a=><div key={a.id} style={{display:'flex',gap:'8px',alignItems:'center'}}><div style={{width:'28px',height:'28px',borderRadius:'8px',background:'#e6f4f1',display:'grid',placeItems:'center',color:'#0f766e'}}><ShoppingCart size={14}/></div><div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px',display:'block',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{a.title}</b><small style={{fontSize:'11px',color:'#6b7d76'}}>{a.detail}</small></div><small style={{fontSize:'10px',color:'#94a8a1'}}>{a.time}</small></div>)}
+          </div>
+        </div>
+
+        <div className="card">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><h2>Top products</h2><p className="sub">Best sellers from combined sales</p></div><Package size={16} color="#6b7d76"/></div>
+          <div style={{marginTop:'10px'}}>
+            {topProducts.length? topProducts.map((p,i)=><div key={p.name} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderTop:'1px solid #f1f5f1'}}><span style={{width:'22px',height:'22px',borderRadius:'6px',background:'#ecfdf5',display:'grid',placeItems:'center',fontSize:'10px',fontWeight:800,color:'#065f46'}}>{String(i+1).padStart(2,'0')}</span><span style={{flex:1}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.qty} sold</small></span><b style={{fontSize:'12px'}}>{format(p.rev)}</b></div>) : <div className="empty-state"><b>No sales yet</b><small>Top products will appear after sales</small></div>}
+          </div>
+        </div>
+      </div>
     </div>
-    <div className="form-modal-footer"><button type="button" className="cancel-button" onClick={onClose}>Cancel</button><button type="button" className="primary-button" onClick={save}><Check size={16} />Save batch stock</button></div>
-  </section></div>;
+  );
 }
 
-async function optimizePhoto(file) {
-  if (typeof createImageBitmap !== 'function') return readFileAsDataUrl(file);
-  const bitmap = await createImageBitmap(file);
-  const maxDimension = 760;
-  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  const context = canvas.getContext('2d');
-  if (!context) return readFileAsDataUrl(file);
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close?.();
-  return canvas.toDataURL('image/jpeg', 0.78);
+function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,cart,setCart,addToCart,updateQty,removeFromCart,customers,selectedCustomerId,setSelectedCustomerId,subtotal,discount,total,itemCount,discountOn,setDiscountOn,showPay,setShowPay,mobileCart,setMobileCart,completeSale,giftCards,onAddProduct}){
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> POINT OF SALE</div><h1>Make a sale — 5 payment methods</h1><p>Cash, MoMo, Check, Gift, Account. Select customer, add items, choose payment. All sales combine to owner.</p></div><div className="kpi-row"><span className="kpi"><Package size={14}/> {allProducts.length} items</span><span className="kpi"><Users size={14}/> {customers.length-1} customers</span></div></div>
+
+      <div className="pos">
+        <div className="catalog">
+          <div className="card" style={{padding:'12px'}}>
+            <div className="search-row">
+              <div className="search"><Search size={16} color="#6b7d76"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, SKU, barcode…"/><span style={{fontSize:'10px',color:'#94a8a1',border:'1px solid #e7ece8',padding:'2px 6px',borderRadius:'4px'}}>⌘K</span></div>
+              <button className="btn small" onClick={onAddProduct}><Plus size={14}/> Add item</button>
+            </div>
+            <div className="chips" style={{marginTop:'10px'}}>
+              {categories.map(c=><button key={c} className={`chip-btn ${cat===c?'active':''}`} onClick={()=>setCat(c)}>{c}{c==='All'&&` (${allProducts.length})`}</button>)}
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:'10px',fontSize:'11px',color:'#6b7d76'}}><span>{products.length} products</span><span>Tap to add to sale</span></div>
+          </div>
+
+          <div className="products">
+            {products.map(p=>(
+              <button key={p.id} className="prod" onClick={()=>addToCart(p)} disabled={p.stock<1}>
+                <div className="prod-top"><div className={`prod-img ${p.color}`}>{p.name.slice(0,2).toUpperCase()}</div><span className={`stock ${p.stock<=5?'low':''}`}>{p.stock<=5?`${p.stock} left`:'In stock'}</span></div>
+                <b>{p.name}</b><small>{p.brand} · {p.category}</small>
+                <div className="prod-foot"><strong>{format(p.price)}</strong><span className="add"><Plus size={14}/></span></div>
+              </button>
+            ))}
+          </div>
+          {products.length===0 && <div className="empty-state"><Package size={20}/><b>No products found</b><small>Try different search or add new item</small></div>}
+        </div>
+
+        <div className={`card cart ${mobileCart?'open':''}`}>
+          <div className="cart-head"><div><h2>Current sale <span className="count">{itemCount}</span></h2><small style={{color:'#6b7d76',fontSize:'11px'}}>New transaction · {shortTime()}</small></div><div style={{display:'flex',gap:'6px'}}><button className="btn small ghost" onClick={()=>{ if(cart.length && confirm('Clear sale?')){ setCart([]); setDiscountOn(false) } }} disabled={!cart.length} style={{color:'#b91c1c'}}>Clear</button><button className="btn icon small" onClick={()=>setMobileCart(false)}><X size={14}/></button></div></div>
+
+          <div className="customer">
+            <UserRound size={16} color="#6b7d76"/>
+            <select value={selectedCustomerId} onChange={e=>setSelectedCustomerId(e.target.value)}>
+              {customers.map(c=><option key={c.id} value={c.id}>{c.name}{c.balance>0?` · Owes ${format(c.balance)}`:''}</option>)}
+            </select>
+            <ChevronDown size={14} color="#6b7d76"/>
+          </div>
+
+          <div className="cart-list">
+            {cart.length? cart.map(i=>(
+              <div className="cart-item" key={i.id}>
+                <div style={{width:'36px',height:'36px',borderRadius:'8px',background:'#ecfdf5',display:'grid',placeItems:'center',fontSize:'10px',fontWeight:800,color:'#065f46'}}>{i.name.slice(0,2).toUpperCase()}</div>
+                <div style={{flex:1,minWidth:0}}><b>{i.name}</b><small>{format(i.price)} · {i.brand||i.category}</small><div className="qty"><button onClick={()=>updateQty(i.id,-1)}><Minus size={12}/></button><span>{i.qty}</span><button onClick={()=>updateQty(i.id,1)}><Plus size={12}/></button></div></div>
+                <div className="line-total"><b>{format(i.price*i.qty)}</b><button onClick={()=>removeFromCart(i.id)}><X size={14}/></button></div>
+              </div>
+            )) : <div className="empty"><span style={{width:'40px',height:'40px',borderRadius:'50%',background:'#f3f4f6',display:'grid',placeItems:'center',margin:'0 auto'}}><ShoppingCart size={18}/></span><b>Sale empty</b><small>Tap products to add</small></div>}
+          </div>
+
+          <div style={{padding:'10px 14px',borderTop:'1px solid #e7ece8',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',fontWeight:600}}><input type="checkbox" checked={discountOn} onChange={e=>setDiscountOn(e.target.checked)}/> Apply 10% discount</label>
+            <span style={{fontSize:'11px',color:'#6b7d76'}}>{discountOn?`-${format(discount)}`:''}</span>
+          </div>
+
+          <div className="totals">
+            <div className="totals-row"><span>Subtotal</span><b>{format(subtotal)}</b></div>
+            {discountOn && <div className="totals-row" style={{color:'#0f766e'}}><span>Discount 10%</span><b>-{format(discount)}</b></div>}
+            <div className="totals-row total"><span>Total due</span><b>{format(total)}</b></div>
+          </div>
+
+          <div className="pay-label">PAYMENT METHOD — 5 OPTIONS</div>
+          <div className="pay-grid five">
+            {paymentMethods.map(pm=>(
+              <button key={pm.id} className="pay-btn" onClick={()=>setShowPay(pm.id)} disabled={!cart.length}>
+                <pm.icon size={16}/>{pm.label}
+              </button>
+            ))}
+          </div>
+
+          <button className="checkout" disabled={!cart.length} onClick={()=>setShowPay('Cash')}><span>Charge {format(total)}</span><ArrowRight size={18}/></button>
+          <div className="secure"><ShieldCheck size={12}/> All sales combine to owner account</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,onEdit,onDelete,onAdd}){
+  const filtered = products.filter(p=>{
+    const matchCat = cat==='All'||p.category===cat;
+    const q = search.toLowerCase();
+    return matchCat && `${p.name} ${p.brand} ${p.sku} ${p.category}`.toLowerCase().includes(q);
   });
+  const low = filtered.filter(p=>p.stock<=5).length;
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><Package size={12}/> ITEM LIST</div><h1>Item list & inventory</h1><p>Manage shop items, stock, prices. Low stock alerts, profit tracking.</p></div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
+      <div className="kpi-row" style={{marginBottom:'12px'}}><span className="kpi"><b>{products.length}</b> total items</span><span className="kpi" style={{color:low?'#92400e':'#065f46',background:low?'#fef3c7':'#ecfdf5'}}><AlertTriangle size={14}/> <b>{low}</b> low stock</span><span className="kpi"><DollarSign size={14}/> Profit tracked</span></div>
+      <div className="card">
+        <div className="toolbar"><div className="search" style={{maxWidth:'380px'}}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search items, SKU, brand…"/></div><select value={cat} onChange={e=>setCat(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option>{categories.filter(c=>c!=='All').map(c=><option key={c}>{c}</option>)}</select></div>
+        <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th><th>COST</th><th>PRICE</th><th>PROFIT</th><th>STATUS</th><th></th></tr></thead><tbody>
+          {filtered.map(p=>{
+            const profit = p.price - (p.cost||0);
+            const margin = p.price? (profit/p.price*100):0;
+            return <tr key={p.id}><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className={`prod-img ${p.color}`} style={{width:'32px',height:'32px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div><span><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.brand}</small></span></div></td><td>{p.sku}</td><td>{p.category}</td><td><b style={{color:p.stock<=5?'#92400e':'#065f46'}}>{p.stock}</b> units</td><td>{format(p.cost||0)}</td><td><b>{format(p.price)}</b></td><td><span style={{color:profit>0?'#065f46':'#991b1b'}}>{format(profit)} ({margin.toFixed(0)}%)</span></td><td><span className={`status ${p.stock===0?'bad':p.stock<=5?'warn':'ok'}`}><i/>{p.stock===0?'Out':p.stock<=5?'Low':'In stock'}</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onEdit(p)}><Edit2 size={12}/> Edit</button>{isOwner && <button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm(`Delete ${p.name}?`)) onDelete(p.id)}}><Trash2 size={12}/></button>}</div></td></tr>
+          })}
+        </tbody></table></div>
+        {filtered.length===0 && <div className="empty-state"><b>No items</b><small>Try different filter</small></div>}
+        <div style={{display:'flex',justifyContent:'space-between',padding:'10px 2px 2px',fontSize:'11px',color:'#6b7d76'}}><span>Showing {filtered.length} of {products.length}</span><span>Owner controls inventory</span></div>
+      </div>
+    </div>
+  );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
+  const [q,setQ]=useState('');
+  const [payModal,setPayModal]=useState(null);
+  const [payAmount,setPayAmount]=useState('');
+  const filtered = customers.filter(c=>{
+    if(c.isWalkIn) return false;
+    return `${c.name} ${c.phone} ${c.email}`.toLowerCase().includes(q.toLowerCase());
+  });
+  const totalReceivable = filtered.reduce((s,c)=>s+Number(c.balance||0),0);
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> CUSTOMER LIST</div><h1>Customer list & accounts</h1><p>Track customers, balances, total spent. Account sales increase balance, payments reduce it. Combined to owner.</p></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add customer</button></div>
+      <div className="kpi-row" style={{marginBottom:'12px'}}><span className="kpi"><b>{filtered.length}</b> customers</span><span className="kpi" style={{background:'#fffbeb'}}><Wallet size={14}/> <b>{format(totalReceivable)}</b> receivable</span><span className="kpi"><TrendingUp size={14}/> Combined to owner</span></div>
+      <div className="card">
+        <div className="toolbar"><div className="search" style={{maxWidth:'360px'}}><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search customer, phone…"/></div><button className="btn small" onClick={()=>{const blob=new Blob([JSON.stringify(customers,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='customers.json'; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export</button></div>
+        <div className="table-wrap"><table><thead><tr><th>CUSTOMER</th><th>PHONE</th><th>BALANCE (OWES)</th><th>TOTAL SPENT</th><th>VISITS</th><th>STATUS</th><th></th></tr></thead><tbody>
+          {filtered.map(c=>{
+            const custSales = sales.filter(s=>s.customerId===c.id);
+            return <tr key={c.id}><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className="avatar cashier" style={{width:'28px',height:'28px',fontSize:'10px'}}>{initials(c.name)}</div><span><b style={{fontSize:'12px'}}>{c.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{c.email||c.address}</small></span></div></td><td>{c.phone||'—'}</td><td><b style={{color:c.balance>0?'#991b1b':'#065f46'}}>{format(c.balance)}</b></td><td>{format(c.totalSpent)}</td><td>{c.visits||custSales.length}</td><td><span className={`status ${c.balance>0?'warn':'ok'}`}><i/>{c.balance>0?'Owes':'Clear'}</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onEdit(c)}><Edit2 size={12}/> Edit</button>{c.balance>0 && isOwner && <button className="btn small primary" onClick={()=>{setPayModal(c);setPayAmount(String(c.balance))}}><DollarSign size={12}/> Pay</button>}</div></td></tr>
+          })}
+        </tbody></table></div>
+      </div>
+
+      {payModal && (
+        <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) setPayModal(null)}}>
+          <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#ecfdf5',color:'#065f46',display:'grid',placeItems:'center'}}><Wallet size={18}/></div><div><h3>Record account payment</h3><p>{payModal.name} owes {format(payModal.balance)}</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={()=>setPayModal(null)}><X size={14}/></button></div>
+            <div className="modal-body">
+              <div className="field"><label>Amount received (GH₵)</label><input type="number" value={payAmount} onChange={e=>setPayAmount(e.target.value)} min="0" step="0.01"/></div>
+              <div style={{padding:'10px',background:'#f9fbf9',border:'1px solid #e7ece8',borderRadius:'8px',fontSize:'12px'}}><div style={{display:'flex',justifyContent:'space-between'}}><span>Current balance</span><b>{format(payModal.balance)}</b></div><div style={{display:'flex',justifyContent:'space-between',marginTop:'6px'}}><span>After payment</span><b style={{color:'#065f46'}}>{format(Math.max(0, payModal.balance - Number(payAmount||0)))}</b></div></div>
+            </div>
+            <div className="modal-foot"><button className="btn" onClick={()=>setPayModal(null)}>Cancel</button><button className="btn primary" onClick={()=>{ if(Number(payAmount)>0){ onPayAccount(payModal.id, Number(payAmount)); setPayModal(null);} }}><Check size={14}/> Record payment</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InvoicesPage({sales,isOwner,filter,setFilter,onViewInvoice,onViewReceipt}){
+  const total = sales.reduce((s,x)=>s+Number(x.total||0),0);
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history — combined accounts':'My sales history'}</h1><p>{isOwner?'All invoices from all cashiers combined to owner. Filter by payment: cash, momo, check, gift, account.':'Your sales recorded to owner account.'}</p></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Cashier','Customer','Items','Payment','Total']; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,s.itemCount,s.payment,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
+
+      <div className="card">
+        <div className="toolbar">
+          <div className="search" style={{maxWidth:'320px'}}><Search size={16}/><input value={filter.search} onChange={e=>setFilter(f=>({...f,search:e.target.value}))} placeholder="Search invoice, customer, cashier…"/></div>
+          <select value={filter.payment} onChange={e=>setFilter(f=>({...f,payment:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option><option>Cash</option><option>MoMo</option><option>Check</option><option>Gift</option><option>Account</option></select>
+          <select value={filter.date} onChange={e=>setFilter(f=>({...f,date:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>
+        </div>
+        <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>CASHIER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th><th>STATUS</th><th></th></tr></thead><tbody>
+          {sales.map(s=><tr key={s.id}><td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.id}</small></td><td><b>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td><td>{s.customerName}</td><td>{s.cashier}</td><td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td><td>{s.itemCount}</td><td><b>{format(s.total)}</b></td><td><span className="status ok"><i/>Paid</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small" onClick={()=>onViewReceipt(s)}><Receipt size={12}/> Receipt</button></div></td></tr>)}
+        </tbody></table></div>
+        {sales.length===0 && <div className="empty-state"><FileText size={20}/><b>No sales found</b><small>Try different filters</small></div>}
+      </div>
+    </div>
+  );
+}
+
+function GiftAccountPage({giftCards,customers,sales,onAdd,onPayAccount}){
+  const [tab,setTab]=useState('gift');
+  const activeGift = giftCards.filter(g=>g.status==='active');
+  const totalGift = activeGift.reduce((s,g)=>s+Number(g.balance||0),0);
+  const receivable = customers.filter(c=>!c.isWalkIn && c.balance>0);
+  const totalRec = receivable.reduce((s,c)=>s+Number(c.balance||0),0);
+
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><Gift size={12}/> GIFT & ACCOUNTS</div><h1>Gift cards & account balances</h1><p>Manage gift cards (gift payment) and customer account receivables. All combined to owner.</p></div><button className="btn primary" onClick={onAdd}><Plus size={16}/> New gift card</button></div>
+
+      <div style={{display:'flex',gap:'8px',marginBottom:'14px'}}>
+        <button className={`btn ${tab==='gift'?'primary':'ghost'}`} onClick={()=>setTab('gift')}><Gift size={14}/> Gift Cards · {format(totalGift)}</button>
+        <button className={`btn ${tab==='account'?'primary':'ghost'}`} onClick={()=>setTab('account')}><Wallet size={14}/> Account Receivables · {format(totalRec)}</button>
+      </div>
+
+      {tab==='gift' && (
+        <div className="card">
+          <div className="table-wrap"><table><thead><tr><th>CODE</th><th>CUSTOMER</th><th>BALANCE</th><th>ORIGINAL</th><th>EXPIRY</th><th>STATUS</th><th>USAGE</th></tr></thead><tbody>
+            {giftCards.map(g=>{
+              const used = sales.filter(s=>s.payment==='Gift' && s.paymentDetail?.code===g.code).length;
+              return <tr key={g.id}><td><b style={{fontFamily:'monospace',fontSize:'12px'}}>{g.code}</b></td><td>{g.customerName||'—'}</td><td><b style={{color:g.balance>0?'#065f46':'#991b1b'}}>{format(g.balance)}</b></td><td>{format(g.original)}</td><td>{readableDate(g.expiry)}</td><td><span className={`status ${g.status==='active'?'ok':g.status==='used'?'bad':'warn'}`}><i/>{g.status}</span></td><td>{used} sales</td></tr>
+            })}
+          </tbody></table></div>
+        </div>
+      )}
+
+      {tab==='account' && (
+        <div className="grid" style={{gridTemplateColumns:'1fr'}}>
+          <div className="card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}><h2>Account receivables — combined to owner</h2><span className="chip"><Wallet size={14}/>{format(totalRec)} owed</span></div>
+            <div className="table-wrap"><table><thead><tr><th>CUSTOMER</th><th>PHONE</th><th>BALANCE</th><th>LAST SALE</th><th></th></tr></thead><tbody>
+              {receivable.map(c=>{
+                const last = sales.filter(s=>s.customerId===c.id).sort((a,b)=>b.date.localeCompare(a.date))[0];
+                return <tr key={c.id}><td><b>{c.name}</b></td><td>{c.phone}</td><td><b style={{color:'#991b1b'}}>{format(c.balance)}</b></td><td>{last?`${readableDate(last.date)} · ${format(last.total)}`:'—'}</td><td><button className="btn small primary" onClick={()=>{ const amt=prompt(`Payment amount for ${c.name} (owes ${format(c.balance)}):`, String(c.balance)); if(amt && Number(amt)>0) onPayAccount(c.id, Number(amt))}}><DollarSign size={12}/> Collect</button></td></tr>
+              })}
+            </tbody></table></div>
+            {receivable.length===0 && <div className="empty-state"><CheckCircle2 size={20}/><b>All accounts clear</b><small>No customers owe</small></div>}
+          </div>
+          <div className="card" style={{background:'#fffbeb',borderColor:'#fde68a'}}>
+            <h2 style={{display:'flex',alignItems:'center',gap:'8px'}}><ShieldCheck size={16}/> Owner combined account logic</h2>
+            <p className="sub" style={{marginTop:'6px',lineHeight:1.5}}>Account sales are not cash in hand — they are receivables owed to the owner. When customer pays, record it here and balance reduces. Total receivables {format(totalRec)} is money expected. All cashier account sales already included in owner combined total, but tracked separately as owed.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmployeesPage({employees,sales,onEdit,onAdd}){
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> EMPLOYEES ACCOUNT</div><h1>Employees account & control</h1><p>Owner controls employees, roles, shifts. All their sales combine to owner account.</p></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add employee</button></div>
+
+      <div className="grid" style={{gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',marginBottom:'14px'}}>
+        {employees.map(emp=>{
+          const empSales = sales.filter(s=>s.cashierId===emp.id || s.cashier===emp.name);
+          const empTotal = empSales.reduce((s,x)=>s+Number(x.total||0),0);
+          return <div key={emp.id} className="card" style={{padding:'14px'}}>
+            <div style={{display:'flex',gap:'10px',alignItems:'center'}}><div className={`avatar ${emp.role==='owner'?'owner':'cashier'}`} style={{width:'40px',height:'40px'}}>{emp.initials}</div><div style={{flex:1}}><b style={{fontSize:'13px'}}>{emp.name}</b><small style={{display:'block',fontSize:'11px',color:'#6b7d76'}}>{emp.role} · {emp.shift}</small></div><span className={`status ${emp.status==='On shift'?'ok':'neutral'}`}><i/>{emp.status}</span></div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'12px'}}><div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>SALES COUNT</small><b style={{display:'block',fontSize:'14px'}}>{empSales.length}</b></div><div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>TOTAL TO OWNER</small><b style={{display:'block',fontSize:'14px'}}>{format(empTotal)}</b></div></div>
+            <div style={{display:'flex',gap:'6px',marginTop:'10px'}}><button className="btn small" onClick={()=>onEdit(emp)}><Edit2 size={12}/> Edit</button><span style={{fontSize:'11px',color:'#6b7d76',marginLeft:'auto',alignSelf:'center'}}>{emp.phone}</span></div>
+          </div>
+        })}
+      </div>
+
+      <div className="card">
+        <h2>Owner control — combined accounts</h2><p className="sub">How employee sales combine</p>
+        <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'8px',fontSize:'12px'}}>
+          <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>1</span><span><b>Employee makes sale</b> — cash, momo, check, gift, or account. Sale recorded with cashier name.</span></div>
+          <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>2</span><span><b>Automatically combined to owner</b> — owner dashboard sums all cashier totals. Payment breakdown shows cash vs momo vs check vs gift vs account.</span></div>
+          <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>3</span><span><b>Owner controls</b> — edit items, employees, customers, gift cards, view financial reports, send messages to employees.</span></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReportsPage({sales,products,customers,giftCards}){
+  const [range,setRange]=useState('week');
+  const now=new Date();
+  const filtered = sales.filter(s=>{
+    if(range==='today') return s.date===todayKey();
+    if(range==='week'){ const d=new Date(); d.setDate(d.getDate()-7); return s.date>=d.toISOString().slice(0,10) }
+    if(range==='month'){ return s.date.startsWith(now.toISOString().slice(0,7)) }
+    return true;
+  });
+  const total = filtered.reduce((s,x)=>s+Number(x.total||0),0);
+  const profit = filtered.reduce((sum,s)=>{
+    let p=0; s.items?.forEach(it=>{ const prod=products.find(pr=>pr.id===it.productId); const cost=prod?.cost||0; p+=(it.unitPrice-cost)*it.qty }); return sum+p;
+  },0);
+  const byPayment = paymentMethods.map(pm=>({method:pm.id,total:filtered.filter(s=>s.payment===pm.id).reduce((s,x)=>s+Number(x.total||0),0),count:filtered.filter(s=>s.payment===pm.id).length}));
+  const receivable = customers.reduce((s,c)=>s+Number(c.balance||0),0);
+  const giftLiab = giftCards.filter(g=>g.status==='active').reduce((s,g)=>s+Number(g.balance||0),0);
+
+  // daily bars last 7 days
+  const days = Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); const key=d.toISOString().slice(0,10); const daySales=sales.filter(s=>s.date===key); return {key,label:d.toLocaleDateString('en-GH',{weekday:'short'}),total:daySales.reduce((s,x)=>s+Number(x.total||0),0)} });
+  const maxDay = Math.max(1,...days.map(d=>d.total));
+
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><BarChart3 size={12}/> FINANCIAL REPORT</div><h1>Financial report — owner combined</h1><p>Revenue, profit, payment methods, account receivables, gift liabilities. All cashier accounts combined.</p></div><div style={{display:'flex',gap:'6px'}}>{['today','week','month','all'].map(r=><button key={r} className={`btn small ${range===r?'primary':'ghost'}`} onClick={()=>setRange(r)}>{r.toUpperCase()}</button>)}</div></div>
+
+      <div className="grid metrics" style={{marginBottom:'14px'}}>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><DollarSign size={16}/></div></div><div className="metric-label">Revenue ({range})</div><div className="metric-value">{format(total)}</div><div className="metric-note">{filtered.length} invoices</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><TrendingUp size={16}/></div></div><div className="metric-label">Estimated profit</div><div className="metric-value">{format(profit)}</div><div className="metric-note">{total?`${(profit/total*100).toFixed(1)}% margin`:''}</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><Wallet size={16}/></div></div><div className="metric-label">Account receivable</div><div className="metric-value">{format(receivable)}</div><div className="metric-note">Owed to owner</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon violet"><Gift size={16}/></div></div><div className="metric-label">Gift liability</div><div className="metric-value">{format(giftLiab)}</div><div className="metric-note">Active gift cards</div></div>
+      </div>
+
+      <div className="grid layout-2">
+        <div className="card">
+          <h2>Sales over time — last 7 days</h2><p className="sub">Daily revenue combined</p>
+          <div className="bars">
+            {days.map(d=><div key={d.key} className="bar"><b style={{fontSize:'10px'}}>{d.total?format(d.total).replace('GH₵',''):''}</b><div className="bar-track"><div className="bar-fill" style={{height:`${(d.total/maxDay)*100}%`}}/></div><small>{d.label}</small></div>)}
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:'10px',fontSize:'11px',color:'#6b7d76'}}><span>Combined owner total: {format(sales.reduce((s,x)=>s+Number(x.total||0),0))}</span><span>7-day total: {format(days.reduce((s,d)=>s+d.total,0))}</span></div>
+        </div>
+
+        <div className="card">
+          <h2>Payment breakdown — owner combined</h2><p className="sub">Cash, MoMo, Check, Gift, Account</p>
+          <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'12px'}}>
+            {byPayment.map(bp=>{
+              const pct = total? (bp.total/total*100):0;
+              return <div key={bp.method}><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'4px'}}><span><span className={`badge-pay ${bp.method.toLowerCase()}`}>{bp.method}</span> {bp.count} invoices</span><b>{format(bp.total)} · {pct.toFixed(1)}%</b></div><div className="progress"><i style={{width:`${pct}%`}}/></div></div>
+            })}
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Net position</h2><p className="sub">Owner combined accounting</p>
+          <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'8px',fontSize:'12px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',padding:'10px',background:'#ecfdf5',borderRadius:'8px'}}><span>Cash + MoMo + Check collected</span><b>{format(byPayment.filter(b=>['Cash','MoMo','Check'].includes(b.method)).reduce((s,b)=>s+b.total,0))}</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',padding:'10px',background:'#fffbeb',borderRadius:'8px'}}><span>Account receivables (to collect)</span><b>{format(receivable)}</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',padding:'10px',background:'#ede9fe',borderRadius:'8px'}}><span>Gift card liability (prepaid, owed as goods)</span><b>{format(giftLiab)}</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',padding:'12px',background:'#0f2320',color:'#fff',borderRadius:'8px',fontWeight:800}}><span>Combined owner control total</span><b>{format(total+receivable)}</b></div>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Top products by revenue</h2><p className="sub">From combined sales</p>
+          <div style={{marginTop:'10px'}}>
+            {(()=>{
+              const m=new Map(); filtered.forEach(s=>s.items?.forEach(it=>{ const cur=m.get(it.name)||{name:it.name,qty:0,rev:0}; cur.qty+=it.qty; cur.rev+=it.lineTotal; m.set(it.name,cur)})); const top=[...m.values()].sort((a,b)=>b.rev-a.rev).slice(0,5);
+              return top.length? top.map((p,i)=><div key={p.name} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderTop:'1px solid #f1f5f1'}}><span style={{width:'20px',height:'20px',borderRadius:'6px',background:'#f3f4f6',display:'grid',placeItems:'center',fontSize:'10px',fontWeight:800}}>{i+1}</span><span style={{flex:1}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.qty} units</small></span><b>{format(p.rev)}</b></div>) : <div className="empty-state"><b>No data</b></div>
+            })()}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessagesPage({messages,employees,currentUser,isOwner,onSend,onMarkRead}){
+  const [filter,setFilter]=useState('all');
+  const inbox = messages.filter(m=> isOwner || m.to==='all' || m.to===currentUser.id || m.fromId===currentUser.id);
+  const filtered = inbox.filter(m=>{
+    if(filter==='unread') return !m.readBy?.includes(currentUser.id) && m.to!=='self' && m.fromId!==currentUser.id;
+    if(filter==='sent') return m.fromId===currentUser.id;
+    return true;
+  });
+  const unread = inbox.filter(m=> !m.readBy?.includes(currentUser.id) && m.fromId!==currentUser.id).length;
+
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><MessageSquare size={12}/> OWNER MESSAGES TO EMPLOYEES</div><h1>Messages — owner to employees</h1><p>Owner can broadcast to all or send to specific employee. Employees see inbox. Combined account shop communication.</p></div>{isOwner && <button className="btn primary" onClick={onSend}><Send size={16}/> New message</button>}</div>
+
+      <div className="kpi-row" style={{marginBottom:'12px'}}><span className="kpi"><b>{inbox.length}</b> total</span><span className="kpi" style={{background:unread?'#fef3c7':'#ecfdf5'}}><Mail size={14}/> <b>{unread}</b> unread</span><div style={{marginLeft:'auto',display:'flex',gap:'6px'}}>{['all','unread','sent'].map(f=><button key={f} className={`btn small ${filter===f?'primary':'ghost'}`} onClick={()=>setFilter(f)}>{f}</button>)}</div></div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+        {filtered.map(m=>{
+          const isUnread = !m.readBy?.includes(currentUser.id) && m.fromId!==currentUser.id;
+          return <div key={m.id} className={`msg ${isUnread?'unread':''}`} onClick={()=>onMarkRead(m.id,currentUser.id)}>
+            {isUnread && <span className="msg-dot"/>}
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'center'}}><b>{m.subject}</b><small style={{fontSize:'10px',color:'#6b7d76'}}>{readableDate(m.date)} · {m.time}</small></div>
+              <small>From: {m.from} → To: {m.toName} {m.fromId===currentUser.id && '(You sent)'}</small>
+              <p>{m.body}</p>
+              {isOwner && <small style={{marginTop:'6px',color:'#6b7d76'}}>Read by: {m.readBy?.length? employees.filter(e=>m.readBy.includes(e.id)).map(e=>e.name).join(', ') : 'No one yet'}</small>}
+            </div>
+          </div>
+        })}
+        {filtered.length===0 && <div className="empty-state"><MessageSquare size={20}/><b>No messages</b><small>{filter==='unread'?'All caught up':'No messages in this filter'}</small></div>}
+      </div>
+
+      <div className="card" style={{marginTop:'14px',background:'#f6fffe',borderColor:'#ccede8'}}>
+        <h2 style={{display:'flex',alignItems:'center',gap:'8px'}}><ShieldCheck size={16}/> Owner message control</h2>
+        <p className="sub" style={{marginTop:'6px'}}>Owner messages are shop-wide. Use for shift notes, account reminders, stock alerts. All employees receive broadcasts. Cashiers cannot message owner in this demo (owner → employees only as requested).</p>
+      </div>
+    </div>
+  );
+}
+
+// Modals
+
+function ProductModal({product,categories,onClose,onSave}){
+  const [form,setForm]=useState(product||{name:'',sku:'',category:categories[0]||'Groceries',brand:'',price:'',cost:'',stock:'',barcode:''});
+  const [err,setErr]=useState('');
+  const submit = (e)=>{
+    e.preventDefault();
+    if(!form.name.trim()||form.price===''||Number(form.price)<0){ setErr('Enter name and valid price'); return }
+    if(form.stock===''||Number(form.stock)<0){ setErr('Enter valid stock'); return }
+    const p = {
+      id: product?.id||uid('p'),
+      name: form.name.trim(),
+      sku: form.sku.trim()||`SKU-${Date.now().toString().slice(-4)}`,
+      category: form.category,
+      brand: form.brand.trim()||form.category,
+      price: Number(form.price),
+      cost: Number(form.cost||0),
+      stock: Math.floor(Number(form.stock)),
+      barcode: form.barcode.trim(),
+      color: product?.color||['mint','peach','blue','violet'][Math.floor(Math.random()*4)],
+    };
+    onSave(p);
+  };
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#e6f4f1',color:'#0f766e',display:'grid',placeItems:'center'}}><Package size={18}/></div><div><h3>{product?'Edit item':'Add item'}</h3><p>Item list — owner controls inventory</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <form onSubmit={submit}><div className="modal-body">
+          <div className="field"><label>Product name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Jasmine Rice 5kg" required/></div>
+          <div className="two"><div className="field"><label>Category *</label><select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>{categories.map(c=><option key={c}>{c}</option>)}</select></div><div className="field"><label>Brand / size</label><input value={form.brand} onChange={e=>setForm(f=>({...f,brand:e.target.value}))} placeholder="e.g. 5kg"/></div></div>
+          <div className="two"><div className="field"><label>Selling price (GH₵) *</label><input type="number" step="0.01" min="0" value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))} required/></div><div className="field"><label>Cost price (for profit)</label><input type="number" step="0.01" min="0" value={form.cost} onChange={e=>setForm(f=>({...f,cost:e.target.value}))} placeholder="0"/></div></div>
+          <div className="two"><div className="field"><label>Stock quantity *</label><input type="number" min="0" step="1" value={form.stock} onChange={e=>setForm(f=>({...f,stock:e.target.value}))} required/></div><div className="field"><label>SKU</label><input value={form.sku} onChange={e=>setForm(f=>({...f,sku:e.target.value}))} placeholder="Auto if empty"/></div></div>
+          <div className="field"><label>Barcode (optional)</label><input value={form.barcode} onChange={e=>setForm(f=>({...f,barcode:e.target.value}))} placeholder="Scan or enter"/></div>
+          {err && <div style={{color:'#b91c1c',fontSize:'12px'}}>{err}</div>}
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" className="btn primary"><Check size={14}/>{product?'Save changes':'Add item'}</button></div></form>
+      </div>
+    </div>
+  );
+}
+
+function CustomerModal({customer,onClose,onSave}){
+  const [form,setForm]=useState(customer||{name:'',phone:'',email:'',address:'',balance:0});
+  const [err,setErr]=useState('');
+  const submit=(e)=>{
+    e.preventDefault();
+    if(!form.name.trim()){ setErr('Name required'); return }
+    onSave({id:customer?.id||uid('c'), name:form.name.trim(), phone:form.phone.trim(), email:form.email.trim(), address:form.address.trim(), balance: Number(customer?.balance||form.balance||0), totalSpent: Number(customer?.totalSpent||0), visits: Number(customer?.visits||0), isWalkIn:false});
+  };
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#dbeafe',color:'#1e40af',display:'grid',placeItems:'center'}}><Users size={18}/></div><div><h3>{customer?'Edit customer':'Add customer'}</h3><p>Customer list — balances combine to owner</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <form onSubmit={submit}><div className="modal-body">
+          <div className="field"><label>Name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} required/></div>
+          <div className="two"><div className="field"><label>Phone</label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="0244..."/></div><div className="field"><label>Email</label><input value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="optional"/></div></div>
+          <div className="field"><label>Address</label><input value={form.address} onChange={e=>setForm(f=>({...f,address:e.target.value}))} placeholder="Location"/></div>
+          {customer && <div className="field"><label>Balance (GH₵ owes)</label><input type="number" step="0.01" value={form.balance} onChange={e=>setForm(f=>({...f,balance:e.target.value}))}/></div>}
+          {err && <div style={{color:'#b91c1c',fontSize:'12px'}}>{err}</div>}
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary"><Check size={14}/>{customer?'Save':'Add customer'}</button></div></form>
+      </div>
+    </div>
+  );
+}
+
+function EmployeeModal({employee,onClose,onSave}){
+  const [form,setForm]=useState(employee||{name:'',role:'cashier',phone:'',email:'',shift:'08:00-16:00',status:'On shift',salary:1500});
+  const submit=(e)=>{
+    e.preventDefault();
+    if(!form.name.trim()) return;
+    onSave({id:employee?.id||uid('e'), name:form.name.trim(), role:form.role, phone:form.phone.trim(), email:form.email.trim(), shift:form.shift, status:form.status, salary:Number(form.salary||0), initials:initials(form.name)});
+  };
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#ede9fe',color:'#5b21b6',display:'grid',placeItems:'center'}}><UserCircle size={18}/></div><div><h3>{employee?'Edit employee':'Add employee'}</h3><p>Employees account — owner control</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <form onSubmit={submit}><div className="modal-body">
+          <div className="field"><label>Name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} required/></div>
+          <div className="two"><div className="field"><label>Role</label><select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}><option value="cashier">Cashier</option><option value="manager">Manager</option><option value="owner">Owner</option></select></div><div className="field"><label>Shift</label><input value={form.shift} onChange={e=>setForm(f=>({...f,shift:e.target.value}))}/></div></div>
+          <div className="two"><div className="field"><label>Phone</label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div><div className="field"><label>Email</label><input value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))}/></div></div>
+          <div className="two"><div className="field"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}><option>On shift</option><option>Off duty</option><option>On leave</option></select></div><div className="field"><label>Salary (GH₵)</label><input type="number" value={form.salary} onChange={e=>setForm(f=>({...f,salary:e.target.value}))}/></div></div>
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary"><Check size={14}/>{employee?'Save':'Add employee'}</button></div></form>
+      </div>
+    </div>
+  );
+}
+
+function GiftModal({customers,onClose,onSave}){
+  const [form,setForm]=useState({code:`GIFT-${Math.random().toString(36).slice(2,6).toUpperCase()}-${String(Date.now()).slice(-3)}`,balance:'100',customerId:'',expiry:new Date(Date.now()+90*24*60*60*1000).toISOString().slice(0,10)});
+  const submit=(e)=>{
+    e.preventDefault();
+    const cust = customers.find(c=>c.id===form.customerId);
+    onSave({id:uid('g'),code:form.code.trim().toUpperCase(),balance:Number(form.balance),original:Number(form.balance),customerId:form.customerId,customerName:cust?.name||'',expiry:form.expiry,status:'active'});
+  };
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#ede9fe',color:'#5b21b6',display:'grid',placeItems:'center'}}><Gift size={18}/></div><div><h3>New gift card</h3><p>Gift payment — customer can pay with code</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <form onSubmit={submit}><div className="modal-body">
+          <div className="field"><label>Gift code *</label><input value={form.code} onChange={e=>setForm(f=>({...f,code:e.target.value}))} required style={{fontFamily:'monospace'}}/></div>
+          <div className="two"><div className="field"><label>Amount (GH₵) *</label><input type="number" step="0.01" min="1" value={form.balance} onChange={e=>setForm(f=>({...f,balance:e.target.value}))} required/></div><div className="field"><label>Expiry</label><input type="date" value={form.expiry} onChange={e=>setForm(f=>({...f,expiry:e.target.value}))}/></div></div>
+          <div className="field"><label>Customer (optional)</label><select value={form.customerId} onChange={e=>setForm(f=>({...f,customerId:e.target.value}))}><option value="">No customer / Walk-in</option>{customers.filter(c=>!c.isWalkIn).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary"><Gift size={14}/> Create gift card</button></div></form>
+      </div>
+    </div>
+  );
+}
+
+function MessageModal({employees,currentUser,onClose,onSend}){
+  const [form,setForm]=useState({to:'all',subject:'',body:''});
+  const submit=(e)=>{
+    e.preventDefault();
+    if(!form.subject.trim()||!form.body.trim()) return;
+    const toName = form.to==='all' ? 'All Staff' : employees.find(emp=>emp.id===form.to)?.name||'';
+    onSend({id:uid('m'),from:currentUser.name,fromId:currentUser.id,to:form.to,toName,subject:form.subject.trim(),body:form.body.trim(),date:todayKey(),time:shortTime(),readBy:[currentUser.id]});
+  };
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal wide"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#e6f4f1',color:'#0f766e',display:'grid',placeItems:'center'}}><MessageSquare size={18}/></div><div><h3>New message — owner to employees</h3><p>Broadcast or direct to employee</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <form onSubmit={submit}><div className="modal-body">
+          <div className="two"><div className="field"><label>To *</label><select value={form.to} onChange={e=>setForm(f=>({...f,to:e.target.value}))}><option value="all">All Staff (broadcast)</option>{employees.filter(e=>e.role!=='owner').map(e=><option key={e.id} value={e.id}>{e.name} · {e.role}</option>)}</select></div><div className="field"><label>Subject *</label><input value={form.subject} onChange={e=>setForm(f=>({...f,subject:e.target.value}))} placeholder="e.g. Restock reminder" required/></div></div>
+          <div className="field"><label>Message *</label><textarea value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))} placeholder="Write message to employees…" required rows={5}/></div>
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary"><Send size={14}/> Send message</button></div></form>
+      </div>
+    </div>
+  );
+}
+
+function PaymentModal({cart,subtotal,discount,total,customer,giftCards,onClose,onComplete}){
+  const [method,setMethod]=useState('Cash');
+  const [cashTendered,setCashTendered]=useState(String(total));
+  const [momoPhone,setMomoPhone]=useState(customer.phone||'');
+  const [momoTxn,setMomoTxn]=useState('');
+  const [checkBank,setCheckBank]=useState('');
+  const [checkNumber,setCheckNumber]=useState('');
+  const [giftCode,setGiftCode]=useState('');
+  const [err,setErr]=useState('');
+
+  useEffect(()=>{ setCashTendered(String(total)); },[total]);
+
+  const gift = giftCards.find(g=>g.code===giftCode.trim().toUpperCase() && g.status==='active');
+  const change = Number(cashTendered||0) - total;
+
+  const submit = ()=>{
+    setErr('');
+    if(method==='Cash'){
+      if(Number(cashTendered) < total){ setErr(`Cash GH₵${cashTendered} less than total ${format(total)}`); return }
+      onComplete('Cash',{tendered:Number(cashTendered),change});
+    } else if(method==='MoMo'){
+      if(!momoPhone.trim()){ setErr('Enter MoMo phone'); return }
+      onComplete('MoMo',{phone:momoPhone.trim(),txn:momoTxn.trim()||`MOMO-${Date.now().toString().slice(-6)}`});
+    } else if(method==='Check'){
+      if(!checkNumber.trim()||!checkBank.trim()){ setErr('Enter bank and check number'); return }
+      onComplete('Check',{bank:checkBank.trim(),checkNumber:checkNumber.trim()});
+    } else if(method==='Gift'){
+      if(!gift){ setErr('Invalid or used gift card'); return }
+      if(gift.balance < total){ setErr(`Gift balance ${format(gift.balance)} insufficient`); return }
+      onComplete('Gift',{code:gift.code,used:total,remaining:gift.balance-total});
+    } else if(method==='Account'){
+      if(customer.isWalkIn){ setErr('Select registered customer for account sale'); return }
+      onComplete('Account',{customerId:customer.id});
+    }
+  };
+
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal wide">
+        <div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center'}}><Wallet size={18}/></div><div><h3>Complete sale — {method}</h3><p>{customer.name} · {format(total)} · {cart.length} items · Combined to owner</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <div className="modal-body">
+          <div style={{display:'flex',gap:'6px',overflow:'auto',paddingBottom:'4px'}}>
+            {paymentMethods.map(pm=>(
+              <button key={pm.id} className={`btn small ${method===pm.id?'primary':'ghost'}`} onClick={()=>setMethod(pm.id)}><pm.icon size={14}/>{pm.label}</button>
+            ))}
+          </div>
+
+          <div className="pay-detail">
+            <div className="pay-amount"><span>Total due</span><strong>{format(total)}</strong></div>
+            <div style={{fontSize:'11px',color:'#6b7d76'}}>Customer: <b>{customer.name}</b> {customer.balance>0 && <span style={{color:'#991b1b'}}>· Owes {format(customer.balance)}</span>} · Subtotal {format(subtotal)}{discount>0 && ` · Discount -${format(discount)}`}</div>
+          </div>
+
+          {method==='Cash' && (
+            <div className="pay-detail">
+              <b><Banknote size={14} style={{verticalAlign:'-2px'}}/> Cash payment</b>
+              <div className="two"><div className="field"><label>Cash tendered (GH₵)</label><input type="number" step="0.01" value={cashTendered} onChange={e=>setCashTendered(e.target.value)}/></div><div className="field"><label>Change</label><input value={format(Math.max(0,change))} readOnly style={{background:'#f9fbf9',fontWeight:800}}/></div></div>
+              <small style={{fontSize:'11px',color:'#6b7d76'}}>Cash sales combine directly to owner cash account.</small>
+            </div>
+          )}
+          {method==='MoMo' && (
+            <div className="pay-detail">
+              <b><Smartphone size={14}/> MoMo payment</b>
+              <div className="two"><div className="field"><label>MoMo phone *</label><input value={momoPhone} onChange={e=>setMomoPhone(e.target.value)} placeholder="0244..."/></div><div className="field"><label>Transaction ID</label><input value={momoTxn} onChange={e=>setMomoTxn(e.target.value)} placeholder="Auto if empty"/></div></div>
+              <small style={{fontSize:'11px',color:'#6b7d76'}}>Mobile Money sales combine to owner MoMo account.</small>
+            </div>
+          )}
+          {method==='Check' && (
+            <div className="pay-detail">
+              <b><Landmark size={14}/> Check payment</b>
+              <div className="two"><div className="field"><label>Bank name *</label><input value={checkBank} onChange={e=>setCheckBank(e.target.value)} placeholder="e.g. GCB Bank"/></div><div className="field"><label>Check number *</label><input value={checkNumber} onChange={e=>setCheckNumber(e.target.value)} placeholder="e.g. 000123"/></div></div>
+              <small style={{fontSize:'11px',color:'#6b7d76'}}>Check sales pending clearance — combined to owner but track bank.</small>
+            </div>
+          )}
+          {method==='Gift' && (
+            <div className="pay-detail">
+              <b><Gift size={14}/> Gift card payment</b>
+              <div className="field"><label>Gift code *</label><input value={giftCode} onChange={e=>setGiftCode(e.target.value)} placeholder="e.g. GIFT-100-001" style={{fontFamily:'monospace',textTransform:'uppercase'}}/></div>
+              {gift ? <div style={{padding:'8px',background:'#ecfdf5',borderRadius:'8px',fontSize:'12px',display:'flex',justifyContent:'space-between'}}><span>Balance: <b>{format(gift.balance)}</b></span><span>After: <b>{format(gift.balance-total)}</b></span></div> : giftCode && <div style={{fontSize:'11px',color:'#991b1b'}}>Gift card not found or used</div>}
+              <small style={{fontSize:'11px',color:'#6b7d76'}}>Gift card liability reduces — prepaid amount used.</small>
+            </div>
+          )}
+          {method==='Account' && (
+            <div className="pay-detail">
+              <b><UserCircle size={14}/> Account — on credit</b>
+              {customer.isWalkIn ? <div style={{padding:'10px',background:'#fef2f2',borderRadius:'8px',fontSize:'12px',color:'#991b1b'}}>Walk-in cannot use account. Select registered customer.</div> : <div style={{padding:'10px',background:'#fffbeb',borderRadius:'8px',fontSize:'12px'}}><div style={{display:'flex',justifyContent:'space-between'}}><span>Current balance</span><b>{format(customer.balance)}</b></div><div style={{display:'flex',justifyContent:'space-between',marginTop:'4px'}}><span>New balance after sale</span><b style={{color:'#991b1b'}}>{format(Number(customer.balance)+total)}</b></div><small style={{display:'block',marginTop:'6px',color:'#6b7d76'}}>This amount will be owed to owner. Collect later via Customers → Pay.</small></div>}
+            </div>
+          )}
+
+          {err && <div style={{padding:'10px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'8px',color:'#991b1b',fontSize:'12px'}}>{err}</div>}
+
+          <div style={{padding:'10px',background:'#f9fbf9',border:'1px solid #e7ece8',borderRadius:'8px'}}>
+            <b style={{fontSize:'12px'}}>Sale items</b>
+            <div style={{marginTop:'6px',display:'flex',flexDirection:'column',gap:'4px',maxHeight:'100px',overflow:'auto'}}>
+              {cart.map(i=><div key={i.id} style={{display:'flex',justifyContent:'space-between',fontSize:'11px'}}><span>{i.name} × {i.qty}</span><b>{format(i.price*i.qty)}</b></div>)}
+            </div>
+          </div>
+        </div>
+        <div className="modal-foot"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={submit}><Check size={16}/> Confirm {method} · {format(total)}</button></div>
+      </div>
+    </div>
+  );
+}
+
+function InvoiceModal({sale,onClose,onPrintReceipt}){
+  const subtotal = sale.subtotal||sale.total;
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="invoice"><div className="invoice-head"><div style={{display:'flex',alignItems:'center',gap:'10px'}}><div className="brand-mark" style={{width:'32px',height:'32px',fontSize:'14px'}}>P</div><div><b>Green Market Shop</b><small style={{display:'block',fontSize:'11px',color:'#6b7d76'}}>Accra, Ghana · Customer Invoice</small></div></div><button className="btn icon small" onClick={onClose}><X size={14}/></button></div>
+        <div className="invoice-body">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><span style={{fontSize:'10px',fontWeight:800,letterSpacing:'1px',color:'#0f766e'}}>PAID INVOICE</span><h2 style={{margin:'4px 0',fontSize:'20px',fontWeight:900}}>{sale.invoiceNumber}</h2><small style={{color:'#6b7d76'}}>{readableDate(sale.date)} at {sale.time}</small></div><span className="status ok"><i/> Paid · {sale.payment}</span></div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',margin:'14px 0',padding:'10px',background:'#f9fbf9',border:'1px solid #e7ece8',borderRadius:'8px',fontSize:'11px'}}><div><small style={{color:'#6b7d76',fontWeight:700}}>BILL TO</small><b style={{display:'block'}}>{sale.customerName}</b></div><div><small style={{color:'#6b7d76',fontWeight:700}}>CASHIER</small><b style={{display:'block'}}>{sale.cashier}</b></div><div><small style={{color:'#6b7d76',fontWeight:700}}>PAYMENT</small><b style={{display:'block'}}>{sale.payment} {sale.paymentDetail?.phone||sale.paymentDetail?.bank||sale.paymentDetail?.code||''}</b></div></div>
+          <div className="invoice-line head"><span>PRODUCT</span><span>QTY</span><span>UNIT</span><span>TOTAL</span></div>
+          {sale.items?.map((it,i)=><div key={i} className="invoice-line"><span>{it.name}</span><span>{it.qty}</span><span>{format(it.unitPrice)}</span><span>{format(it.lineTotal)}</span></div>)}
+          <div className="invoice-tot"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{sale.discount>0 && <div><span>Discount</span><b>-{format(sale.discount)}</b></div>}<div className="grand"><span>Total paid</span><b>{format(sale.total)}</b></div></div>
+        </div>
+        <div style={{padding:'12px 20px',borderTop:'1px solid #e7ece8',background:'#fcfdfc',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'11px',color:'#6b7d76',display:'flex',alignItems:'center',gap:'5px'}}><ShieldCheck size={12}/> Thank you for shopping!</span><div style={{display:'flex',gap:'6px'}}><button className="btn small" onClick={()=>onPrintReceipt(sale)}><Printer size={14}/> Receipt</button><button className="btn small primary" onClick={()=>window.print()}><Printer size={14}/> Print invoice</button></div></div>
+      </div>
+    </div>
+  );
+}
+
+function ReceiptModal({sale,onClose}){
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="receipt"><button className="btn icon small" style={{float:'right'}} onClick={onClose}><X size={14}/></button>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',paddingBottom:'10px',borderBottom:'1px dashed #e7ece8'}}><div className="brand-mark" style={{width:'28px',height:'28px',fontSize:'12px'}}>P</div><div><b style={{fontSize:'12px'}}>Green Market Shop</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>Accra, Ghana</small></div></div>
+        <h3>PAYMENT RECEIPT</h3><small>{sale.invoiceNumber} · {readableDate(sale.date)} · {sale.time}</small>
+        <div className="receipt-meta"><div><small>CUSTOMER</small><b>{sale.customerName}</b></div><div><small>CASHIER</small><b>{sale.cashier}</b></div><div><small>PAYMENT</small><b>{sale.payment}</b></div><div><small>TOTAL</small><b>{format(sale.total)}</b></div></div>
+        {sale.items?.map((it,i)=><div key={i} className="receipt-item"><span>{it.name} × {it.qty}</span><b>{format(it.lineTotal)}</b></div>)}
+        <div className="receipt-total"><span>Total paid</span><b>{format(sale.total)}</b></div>
+        <div style={{textAlign:'center',marginTop:'12px'}}><small>Thank you! Sale {sale.id}</small><br/><button className="btn small primary" style={{marginTop:'8px'}} onClick={()=>window.print()}><Printer size={14}/> Print</button></div>
+      </div>
+    </div>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<App/>);
