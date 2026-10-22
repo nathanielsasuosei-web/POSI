@@ -1,6 +1,6 @@
-# POSI — Pharmacy Operations Suite
+# POSI — Drug Store Operations Suite
 
-A responsive, local-first shop POS and operations demo built with React and Vite. It keeps owner and cashier workspaces distinct and adds invoicing and receipts, sales and stock management with low-stock alerts, expenses, business reports, and staff attendance tracking.
+A responsive, local-first **drug store** POS and operations demo built with React and Vite. It keeps owner and cashier workspaces distinct and adds invoicing and printable receipts, sales and stock management with low-stock alerts, expenses, business reports, and staff attendance tracking.
 
 ## Run locally
 
@@ -20,14 +20,14 @@ Production deployments must use HTTPS (or localhost) for service workers.
 
 ## Workspaces and workflows
 
-- **Owner workspace:** overview with low-stock alerts and expense metrics, point of sale, stock & item management, customers, sales & receipts, expenses, gift cards & account receivables, staff tracking, business reports, and messages.
-- **Cashier workspace:** point of sale, items, customers, personal sales history and messages. Cashiers can also clock in and out from the top bar.
-- **Sales & receipts:** every confirmed POS payment records a paid invoice with line items, customer, cashier, payment method, totals and invoice number. Invoices can be viewed, printed as full invoices or compact receipts, and exported to CSV.
+- **Owner workspace:** overview with low-stock alerts and expense metrics, point of sale, stock & item management, customers, sales & receipts, expenses, gift cards & money owed, staff tracking, business reports, and messages. **Only the owner** can send messages to staff and create employee accounts. The owner sees **every employee's sales history** — via the Sales History employee filter, or per staff member from Staff Tracking → Sales history.
+- **Cashier workspace:** point of sale, items, customers, personal sales history and messages (read-only — cashiers cannot send messages). Cashiers can also clock in and out from the top bar.
+- **Sales & receipts:** payments are **Cash, MoMo and Gift card** (Check and Account are removed). Every confirmed POS payment records a paid invoice with line items, customer, seller, payment method, totals and invoice number. Each sale can be **printed as a receipt** — the receipt shows the shop address, **seller name**, customer, **date and time**, payment method and **total amount**, and printing outputs only the receipt (or invoice) on the page. Invoices and receipts can also be exported to CSV from sales history.
 - **Stock management:** product records carry SKU, barcode, supplier, cost/price, stock quantity and a reorder level. Owners can restock (stock in) or record adjustments for damage, loss or count corrections; every unit in or out is written to a stock movement log (sales, restocks, adjustments) with who did it and when. Checkout deducts stock automatically and logs each sale movement.
 - **Low stock alerts:** items at or below their reorder level raise alerts — a badge on the Stock & Items menu, a bell dropdown in the top bar with one-click restock, a dashboard alerts card, a low/out-of-stock filter in inventory, and a warning after any sale that pushes an item to its reorder level.
 - **Expenses:** record business spending (rent, utilities, supplies, transport, salaries, maintenance, marketing) with date, payment method and notes. Entries can be edited, deleted, filtered by date range or category, and exported to CSV, with a spending-by-category breakdown.
 - **Business reports:** revenue, cost of goods sold, gross profit, expenses and net profit for today/week/month/all, a seven-day revenue-vs-expenses chart, payment-method breakdown, expenses-by-category breakdown, top products, net position and full CSV export.
-- **Staff tracking:** clock in/clock out from the top bar with automatic hours calculation, an attendance log with status and export, per-staff performance (sales count, total to owner, items sold, hours worked), and a monthly payroll summary.
+- **Staff tracking:** the owner creates staff accounts; clock in/clock out from the top bar with automatic hours calculation, an attendance log with status and export, per-staff performance (sales count, total to owner, items sold, hours worked), a per-employee sales history, and a monthly payroll summary.
 - **Offline:** on the first production visit while online, the service worker precaches the built app shell and assets. Inventory, invoices, expenses, attendance and stock movements are stored in this browser, so the app can reopen and continue working offline on that device. An online/offline indicator appears in the workspace.
 
 ## Demo limitations and data

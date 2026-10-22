@@ -330,3 +330,13 @@ tbody tr:last-child td{border-bottom:0}
 .dual-tracks{display:flex;gap:4px;align-items:end;height:120px;width:100%;justify-content:center}
 .dual-tracks .bar-track{height:120px}
 .bar-fill.exp{background:linear-gradient(180deg,#fbbf24,#d97706)}
+
+/* Print — only the receipt or invoice prints */
+@media print{
+  body *{visibility:hidden}
+  .receipt,.receipt *,.invoice,.invoice *{visibility:visible}
+  .backdrop{position:static;display:block;padding:0;background:none;backdrop-filter:none}
+  .receipt{position:absolute;left:0;top:0;width:100%;max-width:none;border:0;box-shadow:none;padding:0;margin:0}
+  .invoice{position:absolute;left:0;top:0;width:100%;max-width:none;border:0;box-shadow:none;border-radius:0}
+  .no-print{display:none!important}
+}
