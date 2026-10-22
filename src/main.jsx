@@ -5,7 +5,8 @@ import {
   Wallet, CreditCard, Banknote, Smartphone, Receipt, Ticket, UserCircle,
   Search, Plus, Minus, X, Check, LogOut, Store, Clock3, TrendingUp, AlertTriangle,
   ArrowRight, ChevronDown, Download, Printer, ShieldCheck, CalendarDays, UserRound,
-  CheckCircle2, DollarSign, PiggyBank, Landmark, Mail, Send, Eye, Edit2, Trash2, UserPlus
+  CheckCircle2, DollarSign, PiggyBank, Landmark, Mail, Send, Eye, Edit2, Trash2, UserPlus,
+  Bell, ClipboardList, History, Coins, AlarmClock, TrendingDown
 } from 'lucide-react';
 import './style.css';
 
@@ -19,18 +20,41 @@ const K = {
   messages: 'posi-v3-messages',
   activities: 'posi-v3-activities',
   attendance: 'posi-v3-attendance',
+  expenses: 'posi-v3-expenses',
+  stockMoves: 'posi-v3-stockmoves',
 };
 
 // helpers
 const format = (n) => `GH₵ ${Number(n || 0).toFixed(2)}`;
 const todayKey = () => new Date().toISOString().slice(0,10);
-const shortTime = (d=new Date()) => d.toLocaleTimeString('en-GH',{hour:'2-digit',minute:'2-digit'});
+const shortTime = (d=new Date()) => d.toLocaleTimeString('en-GH',{hour:'2-digit',minute:'2-digit',hour12:false});
 const readableDate = (v) => v ? new Date(v+'T12:00:00').toLocaleDateString('en-GH',{day:'numeric',month:'short',year:'numeric'}) : '—';
 const fullDate = (d=new Date()) => d.toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 const uid = (p='id') => `${p}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
 const initials = (name) => name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+const daysAgo = (n) => new Date(Date.now()-n*86400000).toISOString().slice(0,10);
+const toMinutes = (t='')=>{
+  const m = String(t).trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+  if(!m) return null;
+  let h = Number(m[1]); const min = Number(m[2]); const ap = m[3]?.toLowerCase();
+  if(ap==='pm' && h<12) h+=12;
+  if(ap==='am' && h===12) h=0;
+  return h*60+min;
+};
+const hoursBetween = (dateKey, inTime, outTime) => {
+  const a = toMinutes(inTime), b = toMinutes(outTime);
+  if(a==null||b==null) return null;
+  return Math.max(0, Number(((b-a)/60).toFixed(2)));
+};
+const reorderOf = (p) => Number(p?.lowStockAt ?? 5);
 
 const categories = ['All','Groceries','Beverages','Snacks','Household','Electronics','Beauty','Health','Other'];
+const expenseCategories = ['Rent','Utilities','Supplies','Transport','Salaries','Maintenance','Marketing','Other'];
+const stockMoveTypes = {
+  sale: { label:'Sale', color:'#065f46' },
+  restock: { label:'Restock in', color:'#1e40af' },
+  adjustment: { label:'Adjustment', color:'#92400e' },
+};
 const paymentMethods = [
   { id:'Cash', label:'Cash', icon: Banknote, desc:'Cash payment' },
   { id:'MoMo', label:'MoMo', icon: Smartphone, desc:'Mobile Money' },
@@ -86,6 +110,26 @@ const starterMessages = [
   { id:'m2', from:'Abena Mensah', fromId:'e1', to:'e2', toName:'Ama Boateng', subject:'Customer follow-up', body:'Akosua Boateng has pending account balance GH₵120. Please remind her on next visit.', date:todayKey(), time:'09:00', readBy:[] },
 ];
 
+const starterExpenses = [
+  { id:'x1', date:daysAgo(0), category:'Utilities', amount:180, payment:'Cash', note:'Electricity top-up (ECG)', by:'Abena Mensah' },
+  { id:'x2', date:daysAgo(1), category:'Transport', amount:65, payment:'Cash', note:'Goods delivery to shop', by:'Ama Boateng' },
+  { id:'x3', date:daysAgo(2), category:'Supplies', amount:240, payment:'MoMo', note:'Receipt rolls & carrier bags', by:'Abena Mensah' },
+  { id:'x4', date:daysAgo(3), category:'Maintenance', amount:320, payment:'Cash', note:'Fridge servicing', by:'Abena Mensah' },
+  { id:'x5', date:daysAgo(5), category:'Marketing', amount:150, payment:'MoMo', note:'Local radio promo', by:'Abena Mensah' },
+  { id:'x6', date:daysAgo(6), category:'Rent', amount:1500, payment:'Cash', note:'Monthly shop rent', by:'Abena Mensah' },
+];
+
+const starterStockMoves = [
+  { id:'sm1', productId:'p1', productName:'Jasmine Rice 5kg', type:'restock', qty:20, date:daysAgo(2), time:'09:15', by:'Abena Mensah', note:'Royal Farms delivery' },
+  { id:'sm2', productId:'p5', productName:'Indomie Pack', type:'adjustment', qty:-2, date:daysAgo(1), time:'16:40', by:'Ama Boateng', note:'Damaged packs' },
+  { id:'sm3', productId:'p11', productName:'Water 500ml x12', type:'restock', qty:24, date:daysAgo(1), time:'11:05', by:'Abena Mensah', note:'Voltic delivery' },
+];
+
+const starterAttendance = [
+  { id:'at1', employeeId:'e1', name:'Abena Mensah', date:todayKey(), in:'07:45', out:null, hours:null },
+  { id:'at2', employeeId:'e2', name:'Ama Boateng', date:todayKey(), in:'07:58', out:null, hours:null },
+];
+
 function usePersistent(key, initial){
   const [val,setVal]=useState(()=>{
     try{ const s=localStorage.getItem(key); return s?JSON.parse(s):initial }catch{ return initial }
@@ -105,7 +149,9 @@ function App(){
     {id:'a1',type:'sale',title:'Ama Boateng completed a sale',detail:'GH₵ 109 · Cash',time:'10:42'},
     {id:'a2',type:'sale',title:'Kwame Owusu completed a sale',detail:'GH₵ 74 · MoMo',time:'10:31'},
   ]);
-  const [attendance]=usePersistent(K.attendance, []);
+  const [attendance,setAttendance]=usePersistent(K.attendance, starterAttendance);
+  const [expenses,setExpenses]=usePersistent(K.expenses, starterExpenses);
+  const [stockMoves,setStockMoves]=usePersistent(K.stockMoves, starterStockMoves);
 
   const [role,setRole]=useState(()=>{ try{ return sessionStorage.getItem('pos-role')||null }catch{return null}});
   const [cashierId,setCashierId]=useState(()=>{ try{ return sessionStorage.getItem('pos-cashier')||'e2' }catch{return 'e2'}});
@@ -134,6 +180,10 @@ function App(){
   const [editingEmployee,setEditingEmployee]=useState(null);
   const [showGiftModal,setShowGiftModal]=useState(false);
   const [showMessageModal,setShowMessageModal]=useState(false);
+  const [showExpenseModal,setShowExpenseModal]=useState(false);
+  const [editingExpense,setEditingExpense]=useState(null);
+  const [stockModal,setStockModal]=useState(null); // {product, mode:'restock'|'adjust'}
+  const [alertsOpen,setAlertsOpen]=useState(false);
   const [filterSales,setFilterSales]=useState({search:'',payment:'All',date:'All'});
 
   const currentEmployee = employees.find(e=>e.id===cashierId) || employees.find(e=>e.role==='cashier') || employees[0];
@@ -161,14 +211,77 @@ function App(){
 
   const addActivity = (a)=> setActivities(p=>[{id:uid('act'),...a,time:shortTime()},...p].slice(0,40));
 
+  // Low stock alerts
+  const lowStockItems = useMemo(()=> products
+    .filter(p=>p.stock<=reorderOf(p))
+    .sort((a,b)=>a.stock-b.stock),[products]);
+
+  // Stock movements
+  const logStockMove = (product, type, qty, note)=> {
+    setStockMoves(sm=>[{id:uid('sm'),productId:product.id,productName:product.name,type,qty,date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:note||''},...sm].slice(0,300));
+  };
+
+  const applyStockChange = ({product, mode, qty, note, cost})=>{
+    const amount = Math.floor(Number(qty));
+    if(!product || !amount){ flash('Enter a quantity'); return }
+    const delta = mode==='restock' ? Math.abs(amount) : -Math.abs(amount);
+    setProducts(prev=>prev.map(p=>{
+      if(p.id!==product.id) return p;
+      return {...p, stock: Math.max(0, p.stock + delta), ...(cost!==undefined && cost!=='' ? {cost:Number(cost)} : {})};
+    }));
+    logStockMove(product, mode, delta, note);
+    addActivity({type:'stock',title:`${currentUser?.name} ${mode==='restock'?'restocked':'adjusted'} ${product.name}`,detail:`${delta>0?'+':''}${delta} units${note?` · ${note}`:''}`});
+    flash(mode==='restock' ? `${product.name} restocked (+${delta})` : `${product.name} adjusted (${delta})`);
+    setStockModal(null);
+  };
+
+  // Expenses
+  const saveExpense = (exp)=>{
+    if(editingExpense){
+      setExpenses(es=>es.map(e=>e.id===exp.id?exp:e));
+      flash('Expense updated');
+    }else{
+      setExpenses(es=>[exp,...es]);
+      flash('Expense recorded');
+    }
+    addActivity({type:'expense',title:`${currentUser?.name} recorded expense`,detail:`${format(exp.amount)} · ${exp.category}`});
+    setShowExpenseModal(false); setEditingExpense(null);
+  };
+  const deleteExpense = (id)=>{
+    if(!isOwner){ flash('Only owner can delete expenses'); return }
+    setExpenses(es=>es.filter(e=>e.id!==id));
+    flash('Expense deleted');
+  };
+
+  // Staff attendance (clock in / out)
+  const todayAttendance = attendance.find(a=>a.employeeId===currentUser?.id && a.date===todayKey());
+  const toggleClock = ()=>{
+    if(!todayAttendance){
+      setAttendance(at=>[{id:uid('at'),employeeId:currentUser.id,name:currentUser.name,date:todayKey(),in:shortTime(),out:null,hours:null},...at]);
+      addActivity({type:'staff',title:`${currentUser.name} clocked in`,detail:shortTime()});
+      flash(`Clocked in at ${shortTime()}`);
+    }else if(!todayAttendance.out){
+      const out = shortTime();
+      const hours = hoursBetween(todayAttendance.date, todayAttendance.in, out);
+      setAttendance(at=>at.map(a=>a.id===todayAttendance.id?{...a,out,hours}:a));
+      addActivity({type:'staff',title:`${currentUser.name} clocked out`,detail:`${hours??0} hours today`});
+      flash(`Clocked out · ${hours??0} hours today`);
+    }else{
+      flash('Already clocked out for today');
+    }
+  };
+
   // Products
   const saveProduct = (prod)=>{
     if(editingProduct){
+      const prevStock = editingProduct.stock||0;
       setProducts(p=>p.map(x=>x.id===prod.id?prod:x));
+      if(prod.stock!==prevStock) logStockMove(prod,'adjustment',prod.stock-prevStock,'Edited in product record');
       addActivity({type:'product',title:`${currentUser?.name} updated product`,detail:prod.name});
       flash(`${prod.name} updated`);
     }else{
       setProducts(p=>[prod,...p]);
+      if(prod.stock>0) logStockMove(prod,'restock',prod.stock,'Opening stock');
       addActivity({type:'product',title:`${currentUser?.name} added product`,detail:`${prod.name} · ${prod.stock} units`});
       flash(`${prod.name} added to inventory`);
     }
@@ -298,12 +411,18 @@ function App(){
       itemCount, status:'paid'
     };
 
-    // update products stock
+    // update products stock + log movements + watch for low stock
     setProducts(prev=>prev.map(p=>{
       const sold = cart.find(c=>c.id===p.id);
       if(!sold) return p;
       return {...p, stock: Math.max(0, p.stock - sold.qty)};
     }));
+    const soldMoves = cart.map(i=>({id:uid('sm'),productId:i.id,productName:i.name,type:'sale',qty:-i.qty,date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:saleId}));
+    setStockMoves(sm=>[...soldMoves,...sm].slice(0,300));
+    const lowNow = cart.filter(i=>{
+      const prod = products.find(p=>p.id===i.id);
+      return prod && (prod.stock - i.qty) <= reorderOf(prod);
+    }).map(i=>i.name);
 
     // handle account
     if(payment==='Account'){
@@ -331,6 +450,7 @@ function App(){
     addActivity({type:'sale',title:`${sale.cashier} completed a sale`,detail:`${format(total)} · ${payment}`});
     setCart([]); setDiscountOn(false); setShowPay(false); setMobileCart(false);
     setSuccess(sale);
+    if(lowNow.length){ setTimeout(()=>flash(`Low stock alert: ${lowNow.join(', ')} — restock soon`), 400); }
   };
 
   const todaySales = useMemo(()=> sales.filter(s=>s.date===todayKey()),[sales]);
@@ -353,12 +473,13 @@ function App(){
   const navOwner = [
     {id:'dashboard',label:'Dashboard',icon:LayoutDashboard},
     {id:'pos',label:'Point of Sale',icon:ShoppingCart},
-    {id:'inventory',label:'Item List',icon:Package},
+    {id:'inventory',label:'Stock & Items',icon:Package},
     {id:'customers',label:'Customers',icon:Users},
-    {id:'invoices',label:'Sales History',icon:FileText},
+    {id:'invoices',label:'Sales & Receipts',icon:FileText},
+    {id:'expenses',label:'Expenses',icon:Coins},
     {id:'gift',label:'Gift & Accounts',icon:Gift},
-    {id:'employees',label:'Employees',icon:UserCircle},
-    {id:'reports',label:'Financial Report',icon:BarChart3},
+    {id:'staff',label:'Staff Tracking',icon:UserCircle},
+    {id:'reports',label:'Business Reports',icon:BarChart3},
     {id:'messages',label:'Messages',icon:MessageSquare},
   ];
   const navCashier = [
@@ -384,7 +505,7 @@ function App(){
             {nav.map(n=>(
               <button key={n.id} className={`nav-item ${view===n.id?'active':''}`} onClick={()=>setView(n.id)}>
                 <n.icon size={18}/><span>{n.label}</span>
-                {n.id==='inventory' && products.filter(p=>p.stock<=5).length>0 && <span className="badge">{products.filter(p=>p.stock<=5).length}</span>}
+                {n.id==='inventory' && lowStockItems.length>0 && <span className="badge">{lowStockItems.length}</span>}
                 {n.id==='messages' && messages.filter(m=> (m.to==='all' || m.to===currentUser?.id) && !m.readBy?.includes(currentUser?.id)).length>0 && <span className="badge">{messages.filter(m=> (m.to==='all' || m.to===currentUser?.id) && !m.readBy?.includes(currentUser?.id)).length}</span>}
               </button>
             ))}
@@ -416,13 +537,38 @@ function App(){
           <div className="top-actions">
             <span className={`chip ${online?'online':'offline'}`}><i/> {online?'Online':'Offline'}</span>
             <span className="today"><Clock3 size={14}/>{fullDate()}</span>
+            <button className={`btn small ${todayAttendance && !todayAttendance.out?'primary':'ghost'}`} onClick={toggleClock} title="Staff clock in / out">
+              <AlarmClock size={14}/><span className="clock-text">{todayAttendance ? (todayAttendance.out?`Out ${todayAttendance.out}`:`In ${todayAttendance.in}`) : 'Clock in'}</span>
+            </button>
+            <div className="bell-wrap">
+              <button className="btn icon small bell" onClick={()=>setAlertsOpen(o=>!o)} title="Low stock alerts">
+                <Bell size={14}/>{lowStockItems.length>0 && <span className="bell-badge">{lowStockItems.length}</span>}
+              </button>
+              {alertsOpen && <>
+                <div className="pop-backdrop" onClick={()=>setAlertsOpen(false)}/>
+                <div className="alert-pop">
+                  <div className="alert-pop-head"><b>Low stock alerts</b><small>{lowStockItems.length} item{lowStockItems.length===1?'':'s'} at or below reorder level</small></div>
+                  <div className="alert-pop-list">
+                    {lowStockItems.length? lowStockItems.map(p=>(
+                      <div key={p.id} className="alert-row">
+                        <div className={`prod-img ${p.color}`} style={{width:'28px',height:'28px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div>
+                        <div style={{flex:1,minWidth:0}}><b style={{fontSize:'11px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.stock} left · reorder at {reorderOf(p)}</small></div>
+                        <span className={`status ${p.stock===0?'bad':'warn'}`}><i/>{p.stock===0?'Out':'Low'}</span>
+                        {isOwner && <button className="btn small" onClick={()=>{setStockModal({product:p,mode:'restock'});setAlertsOpen(false)}}>Restock</button>}
+                      </div>
+                    )) : <div style={{padding:'18px 10px',textAlign:'center',color:'#6b7d76',fontSize:'11px'}}><b style={{color:'#065f46',display:'block'}}>All stocked up</b>No low stock alerts</div>}
+                  </div>
+                  <button className="btn small" style={{width:'100%',marginTop:'8px'}} onClick={()=>{setView('inventory');setAlertsOpen(false)}}><Package size={13}/> Open stock management</button>
+                </div>
+              </>}
+            </div>
             <div className="user-menu"><div className={`avatar ${isOwner?'owner':'cashier'}`} style={{width:'28px',height:'28px',fontSize:'11px'}}>{currentUser?.initials||'U'}</div><span style={{fontSize:'12px',fontWeight:700,maxWidth:'110px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{currentUser?.name}</span></div>
             <button className="logout" onClick={signOut}><LogOut size={14}/> Sign out</button>
           </div>
         </header>
 
         <div className="page">
-          {view==='dashboard' && isOwner && <DashboardOwner sales={sales} todaySales={todaySales} products={products} customers={customers} employees={employees} activities={activities} messages={messages} giftCards={giftCards} setView={setView} />}
+          {view==='dashboard' && isOwner && <DashboardOwner sales={sales} todaySales={todaySales} products={products} customers={customers} employees={employees} activities={activities} messages={messages} giftCards={giftCards} expenses={expenses} setView={setView} onRestock={(p)=>setStockModal({product:p,mode:'restock'})} />}
           {view==='pos' && <POSPage
             products={filteredProducts} allProducts={products} categories={categories} cat={cat} setCat={setCat}
             search={search} setSearch={setSearch} cart={cart} setCart={setCart} addToCart={addToCart} updateQty={updateQty} removeFromCart={removeFromCart}
@@ -432,12 +578,13 @@ function App(){
             completeSale={completeSale} giftCards={giftCards}
             onAddProduct={()=>{setEditingProduct(null);setShowProductModal(true)}}
           />}
-          {view==='inventory' && <InventoryPage products={products} setProducts={setProducts} search={search} setSearch={setSearch} cat={cat} setCat={setCat} categories={categories} isOwner={isOwner} onEdit={(p)=>{setEditingProduct(p);setShowProductModal(true)}} onDelete={deleteProduct} onAdd={()=>{setEditingProduct(null);setShowProductModal(true)}} />}
+          {view==='inventory' && <InventoryPage products={products} setProducts={setProducts} search={search} setSearch={setSearch} cat={cat} setCat={setCat} categories={categories} isOwner={isOwner} stockMoves={stockMoves} onEdit={(p)=>{setEditingProduct(p);setShowProductModal(true)}} onDelete={deleteProduct} onAdd={()=>{setEditingProduct(null);setShowProductModal(true)}} onStock={(p,mode)=>setStockModal({product:p,mode})} />}
           {view==='customers' && <CustomersPage customers={customers} sales={sales} isOwner={isOwner} onEdit={(c)=>{setEditingCustomer(c);setShowCustomerModal(true)}} onAdd={()=>{setEditingCustomer(null);setShowCustomerModal(true)}} onPayAccount={payAccount} />}
           {view==='invoices' && <InvoicesPage sales={visibleSales} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} />}
+          {view==='expenses' && isOwner && <ExpensesPage expenses={expenses} onEdit={(e)=>{setEditingExpense(e);setShowExpenseModal(true)}} onAdd={()=>{setEditingExpense(null);setShowExpenseModal(true)}} onDelete={deleteExpense} />}
           {view==='gift' && isOwner && <GiftAccountPage giftCards={giftCards} customers={customers} sales={sales} onAdd={()=>setShowGiftModal(true)} onPayAccount={payAccount} />}
-          {view==='employees' && isOwner && <EmployeesPage employees={employees} sales={sales} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} />}
-          {view==='reports' && isOwner && <ReportsPage sales={sales} products={products} customers={customers} giftCards={giftCards} />}
+          {view==='staff' && isOwner && <StaffPage employees={employees} sales={sales} attendance={attendance} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} />}
+          {view==='reports' && isOwner && <ReportsPage sales={sales} products={products} customers={customers} giftCards={giftCards} expenses={expenses} />}
           {view==='messages' && <MessagesPage messages={messages} employees={employees} currentUser={currentUser} isOwner={isOwner} onSend={()=>setShowMessageModal(true)} onMarkRead={markRead} />}
         </div>
 
@@ -455,6 +602,8 @@ function App(){
       {showEmployeeModal && <EmployeeModal employee={editingEmployee} onClose={()=>{setShowEmployeeModal(false);setEditingEmployee(null)}} onSave={saveEmployee} />}
       {showGiftModal && <GiftModal customers={customers} onClose={()=>setShowGiftModal(false)} onSave={saveGiftCard} />}
       {showMessageModal && <MessageModal employees={employees} currentUser={currentUser} onClose={()=>setShowMessageModal(false)} onSend={sendMessage} />}
+      {showExpenseModal && <ExpenseModal expense={editingExpense} onClose={()=>{setShowExpenseModal(false);setEditingExpense(null)}} onSave={saveExpense} employees={employees} />}
+      {stockModal && <StockModal stock={stockModal} onClose={()=>setStockModal(null)} onSave={applyStockChange} />}
       {showPay && <PaymentModal cart={cart} subtotal={subtotal} discount={discount} total={total} customer={selectedCustomer} giftCards={giftCards} onClose={()=>setShowPay(false)} onComplete={completeSale} />}
       {selectedInvoice && <InvoiceModal sale={selectedInvoice} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} />}
       {selectedReceipt && <ReceiptModal sale={selectedReceipt} onClose={()=>setSelectedReceipt(null)} />}
@@ -519,8 +668,10 @@ function LoginScreen({employees,onSignIn}){
   );
 }
 
-function DashboardOwner({sales,todaySales,products,customers,employees,activities,messages,giftCards,setView}){
-  const lowStock = products.filter(p=>p.stock<=5);
+function DashboardOwner({sales,todaySales,products,customers,employees,activities,messages,giftCards,expenses,setView,onRestock}){
+  const lowStock = products.filter(p=>p.stock<=reorderOf(p)).sort((a,b)=>a.stock-b.stock);
+  const todayExpenses = expenses.filter(e=>e.date===todayKey());
+  const todayExpenseTotal = todayExpenses.reduce((s,e)=>s+Number(e.amount||0),0);
   const totalToday = todaySales.reduce((s,x)=>s+Number(x.total||0),0);
   const weekSales = sales.filter(s=>{ const d=new Date(); d.setDate(d.getDate()-7); return s.date>=d.toISOString().slice(0,10) });
   const weekTotal = weekSales.reduce((s,x)=>s+Number(x.total||0),0);
@@ -544,7 +695,8 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><DollarSign size={16}/></div></div><div className="metric-label">Total combined revenue</div><div className="metric-value">{format(combinedTotal)}</div><div className="metric-note">All payment methods combined to owner</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><PiggyBank size={16}/></div></div><div className="metric-label">Account receivables</div><div className="metric-value">{format(accountReceivable)}</div><div className="metric-note">{customers.filter(c=>c.balance>0).length} customers owe</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon violet"><Gift size={16}/></div></div><div className="metric-label">Gift card liability</div><div className="metric-value">{format(giftLiability)}</div><div className="metric-note">{giftCards.filter(g=>g.status==='active').length} active cards</div></div>
-        <div className="card metric-card"><div className="metric-top"><div className="metric-icon blue"><Package size={16}/></div></div><div className="metric-label">Low stock items</div><div className="metric-value">{lowStock.length}</div><div className="metric-note">{lowStock.length?'Needs restock':'All stocked'}</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon blue"><Package size={16}/></div></div><div className="metric-label">Low stock alerts</div><div className="metric-value">{lowStock.length}</div><div className="metric-note">{lowStock.length? <button className="link-btn" onClick={()=>setView('inventory')}>Needs restock — view items</button> : 'All stocked'}</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><Coins size={16}/></div></div><div className="metric-label">Expenses today</div><div className="metric-value">{format(todayExpenseTotal)}</div><div className="metric-note"><button className="link-btn" onClick={()=>setView('expenses')}>{todayExpenses.length} entries · manage</button></div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><Users size={16}/></div></div><div className="metric-label">Staff on shift</div><div className="metric-value">{employees.filter(e=>e.status==='On shift').length}</div><div className="metric-note">{employees.length} total employees</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon violet"><MessageSquare size={16}/></div></div><div className="metric-label">Unread messages</div><div className="metric-value">{messages.filter(m=>m.to==='all' || m.toName?.includes('All')).length}</div><div className="metric-note">Owner → employees</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><BarChart3 size={16}/></div></div><div className="metric-label">Week revenue</div><div className="metric-value">{format(weekTotal)}</div><div className="metric-note">{weekSales.length} invoices this week</div></div>
@@ -572,6 +724,23 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
             })}
           </tbody></table></div>
           <div style={{marginTop:'10px',fontSize:'11px',color:'#6b7d76',display:'flex',justifyContent:'space-between'}}><span>Combined to owner: {format(combinedTotal)}</span><span>{sales.length} total invoices</span></div>
+        </div>
+
+        <div className="card">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div><h2>Low stock alerts</h2><p className="sub">Items at or below reorder level</p></div><AlertTriangle size={16} color={lowStock.length?'#b45309':'#6b7d76'}/></div>
+          {lowStock.length? (
+            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+              {lowStock.slice(0,6).map(p=>(
+                <div key={p.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',border:'1px solid #fde68a',background:'#fffbeb',borderRadius:'8px'}}>
+                  <div className={`prod-img ${p.color}`} style={{width:'28px',height:'28px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div>
+                  <div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#92400e'}}>{p.stock} left · reorder at {reorderOf(p)}</small></div>
+                  <span className={`status ${p.stock===0?'bad':'warn'}`}><i/>{p.stock===0?'Out':'Low'}</span>
+                  <button className="btn small" onClick={()=>onRestock(p)}>Restock</button>
+                </div>
+              ))}
+              {lowStock.length>6 && <button className="btn small ghost" onClick={()=>setView('inventory')}>View all {lowStock.length} alerts</button>}
+            </div>
+          ) : <div className="empty-state"><b>Everything is stocked</b><small>Alerts appear when items reach their reorder level</small></div>}
         </div>
 
         <div className="card">
@@ -613,7 +782,7 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
           <div className="products">
             {products.map(p=>(
               <button key={p.id} className="prod" onClick={()=>addToCart(p)} disabled={p.stock<1}>
-                <div className="prod-top"><div className={`prod-img ${p.color}`}>{p.name.slice(0,2).toUpperCase()}</div><span className={`stock ${p.stock<=5?'low':''}`}>{p.stock<=5?`${p.stock} left`:'In stock'}</span></div>
+                <div className="prod-top"><div className={`prod-img ${p.color}`}>{p.name.slice(0,2).toUpperCase()}</div><span className={`stock ${p.stock<=reorderOf(p)?'low':''}`}>{p.stock<=reorderOf(p)?`${p.stock} left`:'In stock'}</span></div>
                 <b>{p.name}</b><small>{p.brand} · {p.category}</small>
                 <div className="prod-foot"><strong>{format(p.price)}</strong><span className="add"><Plus size={14}/></span></div>
               </button>
@@ -671,28 +840,74 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
   );
 }
 
-function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,onEdit,onDelete,onAdd}){
+function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,stockMoves,onEdit,onDelete,onAdd,onStock}){
+  const [stockFilter,setStockFilter]=useState('All');
   const filtered = products.filter(p=>{
     const matchCat = cat==='All'||p.category===cat;
     const q = search.toLowerCase();
-    return matchCat && `${p.name} ${p.brand} ${p.sku} ${p.category}`.toLowerCase().includes(q);
+    const matchesText = matchCat && `${p.name} ${p.brand} ${p.sku} ${p.category} ${p.supplier||''}`.toLowerCase().includes(q);
+    const matchesStock = stockFilter==='All' || (stockFilter==='Low' && p.stock<=reorderOf(p)) || (stockFilter==='Out' && p.stock===0);
+    return matchesText && matchesStock;
   });
-  const low = filtered.filter(p=>p.stock<=5).length;
+  const low = products.filter(p=>p.stock<=reorderOf(p)).length;
+  const out = products.filter(p=>p.stock===0).length;
+  const stockValue = products.reduce((s,p)=>s+Number(p.cost||0)*Number(p.stock||0),0);
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Package size={12}/> ITEM LIST</div><h1>Item list & inventory</h1><p>Manage shop items, stock, prices. Low stock alerts, profit tracking.</p></div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
-      <div className="kpi-row" style={{marginBottom:'12px'}}><span className="kpi"><b>{products.length}</b> total items</span><span className="kpi" style={{color:low?'#92400e':'#065f46',background:low?'#fef3c7':'#ecfdf5'}}><AlertTriangle size={14}/> <b>{low}</b> low stock</span><span className="kpi"><DollarSign size={14}/> Profit tracked</span></div>
+      <div className="page-head"><div><div className="eyebrow"><Package size={12}/> STOCK & ITEM LIST</div><h1>Stock management & item records</h1><p>Manage products, reorder levels and stock. Restock in, record damage/loss, and follow every unit in the movement log. Low stock alerts are on.</p></div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
+      <div className="kpi-row" style={{marginBottom:'12px'}}>
+        <span className="kpi"><Package size={14}/> <b>{products.length}</b> total items</span>
+        <span className="kpi" style={{color:low?'#92400e':'#065f46',background:low?'#fef3c7':'#ecfdf5'}}><AlertTriangle size={14}/> <b>{low}</b> low stock</span>
+        <span className="kpi" style={{color:out?'#991b1b':'#065f46',background:out?'#fef2f2':'#ecfdf5'}}><TrendingDown size={14}/> <b>{out}</b> out of stock</span>
+        <span className="kpi"><Wallet size={14}/> Stock value <b>{format(stockValue)}</b></span>
+        <span className="kpi"><History size={14}/> <b>{stockMoves.length}</b> stock moves</span>
+      </div>
       <div className="card">
-        <div className="toolbar"><div className="search" style={{maxWidth:'380px'}}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search items, SKU, brand…"/></div><select value={cat} onChange={e=>setCat(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option>{categories.filter(c=>c!=='All').map(c=><option key={c}>{c}</option>)}</select></div>
-        <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th><th>COST</th><th>PRICE</th><th>PROFIT</th><th>STATUS</th><th></th></tr></thead><tbody>
+        <div className="toolbar">
+          <div className="search" style={{maxWidth:'380px'}}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search items, SKU, brand, supplier…"/></div>
+          <select value={cat} onChange={e=>setCat(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option>{categories.filter(c=>c!=='All').map(c=><option key={c}>{c}</option>)}</select>
+          <div className="chips">{['All','Low','Out'].map(f=><button key={f} className={`chip-btn ${stockFilter===f?'active':''}`} onClick={()=>setStockFilter(f)}>{f==='All'?'All stock':f==='Low'?'Low stock':'Out of stock'}</button>)}</div>
+        </div>
+        <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th><th>REORDER AT</th><th>COST</th><th>PRICE</th><th>PROFIT</th><th>STATUS</th><th></th></tr></thead><tbody>
           {filtered.map(p=>{
             const profit = p.price - (p.cost||0);
             const margin = p.price? (profit/p.price*100):0;
-            return <tr key={p.id}><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className={`prod-img ${p.color}`} style={{width:'32px',height:'32px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div><span><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.brand}</small></span></div></td><td>{p.sku}</td><td>{p.category}</td><td><b style={{color:p.stock<=5?'#92400e':'#065f46'}}>{p.stock}</b> units</td><td>{format(p.cost||0)}</td><td><b>{format(p.price)}</b></td><td><span style={{color:profit>0?'#065f46':'#991b1b'}}>{format(profit)} ({margin.toFixed(0)}%)</span></td><td><span className={`status ${p.stock===0?'bad':p.stock<=5?'warn':'ok'}`}><i/>{p.stock===0?'Out':p.stock<=5?'Low':'In stock'}</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onEdit(p)}><Edit2 size={12}/> Edit</button>{isOwner && <button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm(`Delete ${p.name}?`)) onDelete(p.id)}}><Trash2 size={12}/></button>}</div></td></tr>
+            return <tr key={p.id}>
+              <td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className={`prod-img ${p.color}`} style={{width:'32px',height:'32px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div><span><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.brand}{p.supplier?` · ${p.supplier}`:''}</small></span></div></td>
+              <td>{p.sku}</td><td>{p.category}</td>
+              <td><b style={{color:p.stock<=reorderOf(p)?'#92400e':'#065f46'}}>{p.stock}</b> units</td>
+              <td>{reorderOf(p)}</td>
+              <td>{format(p.cost||0)}</td><td><b>{format(p.price)}</b></td>
+              <td><span style={{color:profit>0?'#065f46':'#991b1b'}}>{format(profit)} ({margin.toFixed(0)}%)</span></td>
+              <td><span className={`status ${p.stock===0?'bad':p.stock<=reorderOf(p)?'warn':'ok'}`}><i/>{p.stock===0?'Out':p.stock<=reorderOf(p)?'Low':'In stock'}</span></td>
+              <td><div style={{display:'flex',gap:'4px'}}>
+                {isOwner && <button className="btn small" title="Restock in" onClick={()=>onStock(p,'restock')}><Plus size={12}/> Stock</button>}
+                {isOwner && <button className="btn small" title="Adjust (damage/loss/count)" onClick={()=>onStock(p,'adjust')}>± Adj</button>}
+                <button className="btn small" onClick={()=>onEdit(p)}><Edit2 size={12}/> Edit</button>
+                {isOwner && <button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm(`Delete ${p.name}?`)) onDelete(p.id)}}><Trash2 size={12}/></button>}
+              </div></td>
+            </tr>
           })}
         </tbody></table></div>
         {filtered.length===0 && <div className="empty-state"><b>No items</b><small>Try different filter</small></div>}
         <div style={{display:'flex',justifyContent:'space-between',padding:'10px 2px 2px',fontSize:'11px',color:'#6b7d76'}}><span>Showing {filtered.length} of {products.length}</span><span>Owner controls inventory</span></div>
+      </div>
+
+      <div className="card" style={{marginTop:'14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div><h2>Stock movement log</h2><p className="sub">Every unit in and out — sales, restocks and adjustments</p></div><History size={16} color="#6b7d76"/></div>
+        <div className="table-wrap"><table><thead><tr><th>DATE</th><th>PRODUCT</th><th>TYPE</th><th>QTY</th><th>BY</th><th>NOTE</th></tr></thead><tbody>
+          {stockMoves.slice(0,15).map(m=>{
+            const t = stockMoveTypes[m.type]||stockMoveTypes.adjustment;
+            return <tr key={m.id}>
+              <td><b style={{fontSize:'12px'}}>{m.date===todayKey()?'Today':readableDate(m.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{m.time}</small></td>
+              <td>{m.productName}</td>
+              <td><span className={`status ${m.type==='restock'?'info':m.type==='sale'?'ok':'warn'}`}><i/>{t.label}</span></td>
+              <td><b style={{color:m.qty>0?'#065f46':'#991b1b'}}>{m.qty>0?`+${m.qty}`:m.qty}</b></td>
+              <td>{m.by}</td><td style={{color:'#6b7d76'}}>{m.note||'—'}</td>
+            </tr>
+          })}
+        </tbody></table></div>
+        {stockMoves.length===0 && <div className="empty-state"><History size={20}/><b>No stock moves yet</b><small>Restocks, sales and adjustments will appear here</small></div>}
       </div>
     </div>
   );
@@ -806,74 +1021,173 @@ function GiftAccountPage({giftCards,customers,sales,onAdd,onPayAccount}){
   );
 }
 
-function EmployeesPage({employees,sales,onEdit,onAdd}){
+function StaffPage({employees,sales,attendance,onEdit,onAdd}){
+  const [tab,setTab]=useState('team');
+  const [attFilter,setAttFilter]=useState('All');
+  const today = todayKey();
+  const clockedInToday = attendance.filter(a=>a.date===today && !a.out);
+  const attRows = attendance
+    .filter(a=> attFilter==='All' || (attFilter==='Open' && !a.out) || (attFilter==='Today' && a.date===today))
+    .slice().sort((a,b)=> (b.date+(b.in||'')).localeCompare(a.date+(a.in||'')));
+  const totalHoursToday = attendance.filter(a=>a.date===today).reduce((s,a)=>s+Number(a.hours||0),0);
+  const payroll = employees.reduce((s,e)=>s+Number(e.salary||0),0);
+
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> EMPLOYEES ACCOUNT</div><h1>Employees account & control</h1><p>Owner controls employees, roles, shifts. All their sales combine to owner account.</p></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add employee</button></div>
+      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> STAFF TRACKING</div><h1>Staff tracking, attendance & control</h1><p>Track who is on shift, clock-in/out hours, sales performance per staff member, and payroll. All sales combine to owner account.</p></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add employee</button></div>
 
-      <div className="grid" style={{gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',marginBottom:'14px'}}>
-        {employees.map(emp=>{
-          const empSales = sales.filter(s=>s.cashierId===emp.id || s.cashier===emp.name);
-          const empTotal = empSales.reduce((s,x)=>s+Number(x.total||0),0);
-          return <div key={emp.id} className="card" style={{padding:'14px'}}>
-            <div style={{display:'flex',gap:'10px',alignItems:'center'}}><div className={`avatar ${emp.role==='owner'?'owner':'cashier'}`} style={{width:'40px',height:'40px'}}>{emp.initials}</div><div style={{flex:1}}><b style={{fontSize:'13px'}}>{emp.name}</b><small style={{display:'block',fontSize:'11px',color:'#6b7d76'}}>{emp.role} · {emp.shift}</small></div><span className={`status ${emp.status==='On shift'?'ok':'neutral'}`}><i/>{emp.status}</span></div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'12px'}}><div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>SALES COUNT</small><b style={{display:'block',fontSize:'14px'}}>{empSales.length}</b></div><div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>TOTAL TO OWNER</small><b style={{display:'block',fontSize:'14px'}}>{format(empTotal)}</b></div></div>
-            <div style={{display:'flex',gap:'6px',marginTop:'10px'}}><button className="btn small" onClick={()=>onEdit(emp)}><Edit2 size={12}/> Edit</button><span style={{fontSize:'11px',color:'#6b7d76',marginLeft:'auto',alignSelf:'center'}}>{emp.phone}</span></div>
+      <div className="kpi-row" style={{marginBottom:'12px'}}>
+        <span className="kpi"><Users size={14}/> <b>{employees.length}</b> staff</span>
+        <span className="kpi" style={{background:clockedInToday.length?'#ecfdf5':'#f3f4f6'}}><AlarmClock size={14}/> <b>{clockedInToday.length}</b> clocked in now</span>
+        <span className="kpi"><Clock3 size={14}/> <b>{totalHoursToday}</b> hours today</span>
+        <span className="kpi"><Wallet size={14}/> Payroll <b>{format(payroll)}</b>/month</span>
+      </div>
+
+      <div style={{display:'flex',gap:'8px',marginBottom:'14px'}}>
+        <button className={`btn ${tab==='team'?'primary':'ghost'}`} onClick={()=>setTab('team')}><Users size={14}/> Team & performance</button>
+        <button className={`btn ${tab==='attendance'?'primary':'ghost'}`} onClick={()=>setTab('attendance')}><ClipboardList size={14}/> Attendance log</button>
+      </div>
+
+      {tab==='team' && (
+        <>
+          <div className="grid" style={{gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',marginBottom:'14px'}}>
+            {employees.map(emp=>{
+              const empSales = sales.filter(s=>s.cashierId===emp.id || s.cashier===emp.name);
+              const empTotal = empSales.reduce((s,x)=>s+Number(x.total||0),0);
+              const empItems = empSales.reduce((s,x)=>s+Number(x.itemCount||0),0);
+              const weekStart = daysAgo(7);
+              const weekHours = attendance.filter(a=>a.employeeId===emp.id && a.date>=weekStart).reduce((s,a)=>s+Number(a.hours||0),0);
+              const openShift = attendance.find(a=>a.employeeId===emp.id && a.date===today && !a.out);
+              return <div key={emp.id} className="card" style={{padding:'14px'}}>
+                <div style={{display:'flex',gap:'10px',alignItems:'center'}}><div className={`avatar ${emp.role==='owner'?'owner':'cashier'}`} style={{width:'40px',height:'40px'}}>{emp.initials}</div><div style={{flex:1}}><b style={{fontSize:'13px'}}>{emp.name}</b><small style={{display:'block',fontSize:'11px',color:'#6b7d76'}}>{emp.role} · {emp.shift}</small></div><span className={`status ${openShift?'ok':emp.status==='On shift'?'info':'neutral'}`}><i/>{openShift?`In ${openShift.in}`:emp.status}</span></div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'12px'}}>
+                  <div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>SALES COUNT</small><b style={{display:'block',fontSize:'14px'}}>{empSales.length}</b></div>
+                  <div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>TOTAL TO OWNER</small><b style={{display:'block',fontSize:'14px'}}>{format(empTotal)}</b></div>
+                  <div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>ITEMS SOLD</small><b style={{display:'block',fontSize:'14px'}}>{empItems}</b></div>
+                  <div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>HOURS (7 DAYS)</small><b style={{display:'block',fontSize:'14px'}}>{weekHours}h</b></div>
+                </div>
+                <div style={{display:'flex',gap:'6px',marginTop:'10px'}}><button className="btn small" onClick={()=>onEdit(emp)}><Edit2 size={12}/> Edit</button><span style={{fontSize:'11px',color:'#6b7d76',marginLeft:'auto',alignSelf:'center'}}>{emp.phone}</span></div>
+              </div>
+            })}
           </div>
-        })}
-      </div>
 
-      <div className="card">
-        <h2>Owner control — combined accounts</h2><p className="sub">How employee sales combine</p>
-        <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'8px',fontSize:'12px'}}>
-          <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>1</span><span><b>Employee makes sale</b> — cash, momo, check, gift, or account. Sale recorded with cashier name.</span></div>
-          <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>2</span><span><b>Automatically combined to owner</b> — owner dashboard sums all cashier totals. Payment breakdown shows cash vs momo vs check vs gift vs account.</span></div>
-          <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>3</span><span><b>Owner controls</b> — edit items, employees, customers, gift cards, view financial reports, send messages to employees.</span></div>
+          <div className="card">
+            <h2>Owner control — combined accounts</h2><p className="sub">How employee sales combine</p>
+            <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'8px',fontSize:'12px'}}>
+              <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>1</span><span><b>Employee makes sale</b> — cash, momo, check, gift, or account. Sale recorded with cashier name.</span></div>
+              <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>2</span><span><b>Automatically combined to owner</b> — owner dashboard sums all cashier totals. Payment breakdown shows cash vs momo vs check vs gift vs account.</span></div>
+              <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>3</span><span><b>Owner controls</b> — edit items, employees, customers, gift cards, view financial reports, send messages to employees.</span></div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {tab==='attendance' && (
+        <div className="card">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'8px',marginBottom:'12px'}}>
+            <div><h2>Attendance log</h2><p className="sub">Clock-in/out history and worked hours</p></div>
+            <div style={{display:'flex',gap:'6px'}}>
+              {['All','Today','Open'].map(f=><button key={f} className={`btn small ${attFilter===f?'primary':'ghost'}`} onClick={()=>setAttFilter(f)}>{f}</button>)}
+              <button className="btn small" onClick={()=>{ const header=['Date','Staff','Clock in','Clock out','Hours','Status']; const rows=attRows.map(a=>[a.date,a.name,a.in,a.out||'',a.hours??'',a.out?'Complete':'On shift']); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`attendance-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={12}/> Export</button>
+            </div>
+          </div>
+          <div className="table-wrap"><table><thead><tr><th>DATE</th><th>STAFF</th><th>CLOCK IN</th><th>CLOCK OUT</th><th>HOURS</th><th>STATUS</th></tr></thead><tbody>
+            {attRows.map(a=>(
+              <tr key={a.id}>
+                <td><b style={{fontSize:'12px'}}>{a.date===today?'Today':readableDate(a.date)}</b></td>
+                <td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className="avatar cashier" style={{width:'26px',height:'26px',fontSize:'9px'}}>{initials(a.name)}</div><b style={{fontSize:'12px'}}>{a.name}</b></div></td>
+                <td>{a.in}</td>
+                <td>{a.out||'—'}</td>
+                <td><b>{a.hours!=null?`${a.hours}h`:'—'}</b></td>
+                <td><span className={`status ${a.out?'ok':'info'}`}><i/>{a.out?'Complete':'On shift'}</span></td>
+              </tr>
+            ))}
+          </tbody></table></div>
+          {attRows.length===0 && <div className="empty-state"><ClipboardList size={20}/><b>No attendance records</b><small>Use “Clock in” in the top bar to start a shift</small></div>}
+          <div style={{marginTop:'10px',fontSize:'11px',color:'#6b7d76'}}>Staff clock in and out from the top bar of any workspace. Hours are calculated automatically.</div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function ReportsPage({sales,products,customers,giftCards}){
+function ReportsPage({sales,products,customers,giftCards,expenses}){
   const [range,setRange]=useState('week');
   const now=new Date();
-  const filtered = sales.filter(s=>{
-    if(range==='today') return s.date===todayKey();
-    if(range==='week'){ const d=new Date(); d.setDate(d.getDate()-7); return s.date>=d.toISOString().slice(0,10) }
-    if(range==='month'){ return s.date.startsWith(now.toISOString().slice(0,7)) }
+  const inRange = (d)=>{
+    if(range==='today') return d===todayKey();
+    if(range==='week'){ const day=new Date(); day.setDate(day.getDate()-7); return d>=day.toISOString().slice(0,10) }
+    if(range==='month') return d.startsWith(now.toISOString().slice(0,7));
     return true;
-  });
+  };
+  const filtered = sales.filter(s=>inRange(s.date));
+  const filteredExp = expenses.filter(e=>inRange(e.date));
   const total = filtered.reduce((s,x)=>s+Number(x.total||0),0);
-  const profit = filtered.reduce((sum,s)=>{
-    let p=0; s.items?.forEach(it=>{ const prod=products.find(pr=>pr.id===it.productId); const cost=prod?.cost||0; p+=(it.unitPrice-cost)*it.qty }); return sum+p;
+  const expenseTotal = filteredExp.reduce((s,e)=>s+Number(e.amount||0),0);
+  const cogs = filtered.reduce((sum,s)=>{
+    let c=0; s.items?.forEach(it=>{ const prod=products.find(pr=>pr.id===it.productId); c+=(prod?.cost||0)*it.qty }); return sum+c;
   },0);
+  const grossProfit = total - cogs;
+  const netProfit = grossProfit - expenseTotal;
   const byPayment = paymentMethods.map(pm=>({method:pm.id,total:filtered.filter(s=>s.payment===pm.id).reduce((s,x)=>s+Number(x.total||0),0),count:filtered.filter(s=>s.payment===pm.id).length}));
   const receivable = customers.reduce((s,c)=>s+Number(c.balance||0),0);
   const giftLiab = giftCards.filter(g=>g.status==='active').reduce((s,g)=>s+Number(g.balance||0),0);
 
-  // daily bars last 7 days
-  const days = Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); const key=d.toISOString().slice(0,10); const daySales=sales.filter(s=>s.date===key); return {key,label:d.toLocaleDateString('en-GH',{weekday:'short'}),total:daySales.reduce((s,x)=>s+Number(x.total||0),0)} });
-  const maxDay = Math.max(1,...days.map(d=>d.total));
+  // daily bars last 7 days (revenue vs expenses)
+  const days = Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); const key=d.toISOString().slice(0,10); const daySales=sales.filter(s=>s.date===key); const dayExp=expenses.filter(e=>e.date===key); return {key,label:d.toLocaleDateString('en-GH',{weekday:'short'}),total:daySales.reduce((s,x)=>s+Number(x.total||0),0),exp:dayExp.reduce((s,e)=>s+Number(e.amount||0),0)} });
+  const maxDay = Math.max(1,...days.map(d=>Math.max(d.total,d.exp)));
+
+  // expense breakdown by category
+  const byCategory = expenseCategories.map(cat=>({cat,total:filteredExp.filter(e=>e.category===cat).reduce((s,e)=>s+Number(e.amount||0),0),count:filteredExp.filter(e=>e.category===cat).length})).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
+  const maxCat = Math.max(1,...byCategory.map(c=>c.total));
+
+  const exportReport = ()=>{
+    const lines = [
+      ['POSI Business Report', range.toUpperCase(), todayKey()],
+      [],
+      ['Metric','Amount (GH\u20b5)'],
+      ['Revenue', total.toFixed(2)],
+      ['Cost of goods sold', cogs.toFixed(2)],
+      ['Gross profit', grossProfit.toFixed(2)],
+      ['Expenses', expenseTotal.toFixed(2)],
+      ['Net profit', netProfit.toFixed(2)],
+      ['Account receivable', receivable.toFixed(2)],
+      ['Gift card liability', giftLiab.toFixed(2)],
+      [],
+      ['Expenses by category','Amount (GH\u20b5)','Entries'],
+      ...byCategory.map(c=>[c.cat,c.total.toFixed(2),c.count]),
+      [],
+      ['Invoice','Date','Cashier','Payment','Total'],
+      ...filtered.map(s=>[s.invoiceNumber,s.date,s.cashier,s.payment,Number(s.total).toFixed(2)]),
+      [],
+      ['Expense','Date','Category','Note','Amount'],
+      ...filteredExp.map(e=>[e.id,e.date,e.category,e.note,Number(e.amount).toFixed(2)]),
+    ];
+    const csv = lines.map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n');
+    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+    const a=document.createElement('a'); a.href=url; a.download=`business-report-${range}-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
 
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><BarChart3 size={12}/> FINANCIAL REPORT</div><h1>Financial report — owner combined</h1><p>Revenue, profit, payment methods, account receivables, gift liabilities. All cashier accounts combined.</p></div><div style={{display:'flex',gap:'6px'}}>{['today','week','month','all'].map(r=><button key={r} className={`btn small ${range===r?'primary':'ghost'}`} onClick={()=>setRange(r)}>{r.toUpperCase()}</button>)}</div></div>
+      <div className="page-head"><div><div className="eyebrow"><BarChart3 size={12}/> BUSINESS REPORT</div><h1>Business report — revenue, expenses & profit</h1><p>Revenue, cost of goods, expenses and net profit with payment and category breakdowns. All cashier accounts combined.</p></div><div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>{['today','week','month','all'].map(r=><button key={r} className={`btn small ${range===r?'primary':'ghost'}`} onClick={()=>setRange(r)}>{r.toUpperCase()}</button>)}<button className="btn small" onClick={exportReport}><Download size={12}/> Export CSV</button></div></div>
 
       <div className="grid metrics" style={{marginBottom:'14px'}}>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><DollarSign size={16}/></div></div><div className="metric-label">Revenue ({range})</div><div className="metric-value">{format(total)}</div><div className="metric-note">{filtered.length} invoices</div></div>
-        <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><TrendingUp size={16}/></div></div><div className="metric-label">Estimated profit</div><div className="metric-value">{format(profit)}</div><div className="metric-note">{total?`${(profit/total*100).toFixed(1)}% margin`:''}</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><TrendingUp size={16}/></div></div><div className="metric-label">Gross profit (after COGS)</div><div className="metric-value">{format(grossProfit)}</div><div className="metric-note">{total?`${(grossProfit/total*100).toFixed(1)}% margin · COGS ${format(cogs)}`:`COGS ${format(cogs)}`}</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><Coins size={16}/></div></div><div className="metric-label">Expenses ({range})</div><div className="metric-value">{format(expenseTotal)}</div><div className="metric-note"><button className="link-btn" onClick={()=>document.getElementById('exp-breakdown')?.scrollIntoView({behavior:'smooth'})}>{filteredExp.length} entries · {byCategory.length} categories</button></div></div>
+        <div className="card metric-card"><div className="metric-top"><div className={`metric-icon ${netProfit>=0?'green':'blue'}`}><TrendingDown size={16}/></div></div><div className="metric-label">Net profit (after expenses)</div><div className="metric-value" style={{color:netProfit>=0?'#065f46':'#991b1b'}}>{format(netProfit)}</div><div className="metric-note">{netProfit>=0?'Profitable in this period':'Running a loss in this period'}</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><Wallet size={16}/></div></div><div className="metric-label">Account receivable</div><div className="metric-value">{format(receivable)}</div><div className="metric-note">Owed to owner</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon violet"><Gift size={16}/></div></div><div className="metric-label">Gift liability</div><div className="metric-value">{format(giftLiab)}</div><div className="metric-note">Active gift cards</div></div>
       </div>
 
       <div className="grid layout-2">
         <div className="card">
-          <h2>Sales over time — last 7 days</h2><p className="sub">Daily revenue combined</p>
-          <div className="bars">
-            {days.map(d=><div key={d.key} className="bar"><b style={{fontSize:'10px'}}>{d.total?format(d.total).replace('GH₵',''):''}</b><div className="bar-track"><div className="bar-fill" style={{height:`${(d.total/maxDay)*100}%`}}/></div><small>{d.label}</small></div>)}
+          <h2>Revenue vs expenses — last 7 days</h2><p className="sub">Daily income against daily spending</p>
+          <div className="bars dual">
+            {days.map(d=><div key={d.key} className="bar"><div className="dual-tracks"><div className="bar-track"><div className="bar-fill" style={{height:`${(d.total/maxDay)*100}%`}}/></div><div className="bar-track"><div className="bar-fill exp" style={{height:`${(d.exp/maxDay)*100}%`}}/></div></div><small>{d.label}</small><b style={{fontSize:'9px'}}>{d.total?format(d.total).replace('GH\u20b5','').trim():'0'}</b></div>)}
           </div>
-          <div style={{display:'flex',justifyContent:'space-between',marginTop:'10px',fontSize:'11px',color:'#6b7d76'}}><span>Combined owner total: {format(sales.reduce((s,x)=>s+Number(x.total||0),0))}</span><span>7-day total: {format(days.reduce((s,d)=>s+d.total,0))}</span></div>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:'10px',fontSize:'11px',color:'#6b7d76',flexWrap:'wrap',gap:'6px'}}><span><span style={{display:'inline-block',width:'8px',height:'8px',borderRadius:'2px',background:'#0f766e',marginRight:'4px'}}/>Revenue 7d: {format(days.reduce((s,d)=>s+d.total,0))}</span><span><span style={{display:'inline-block',width:'8px',height:'8px',borderRadius:'2px',background:'#d97706',marginRight:'4px'}}/>Expenses 7d: {format(days.reduce((s,d)=>s+d.exp,0))}</span></div>
         </div>
 
         <div className="card">
@@ -886,13 +1200,26 @@ function ReportsPage({sales,products,customers,giftCards}){
           </div>
         </div>
 
+        <div className="card" id="exp-breakdown">
+          <h2>Expenses by category</h2><p className="sub">Where the money went ({range})</p>
+          {byCategory.length? (
+            <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'12px'}}>
+              {byCategory.map(c=>{
+                const pct = expenseTotal? (c.total/expenseTotal*100):0;
+                return <div key={c.cat}><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'4px'}}><span>{c.cat} · {c.count} {c.count===1?'entry':'entries'}</span><b>{format(c.total)} · {pct.toFixed(1)}%</b></div><div className="progress"><i style={{width:`${(c.total/maxCat)*100}%`,background:'linear-gradient(90deg,#d97706,#fbbf24)'}}/></div></div>
+              })}
+            </div>
+          ) : <div className="empty-state"><Coins size={20}/><b>No expenses in this period</b><small>Record expenses to see the breakdown</small></div>}
+        </div>
+
         <div className="card">
           <h2>Net position</h2><p className="sub">Owner combined accounting</p>
           <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'8px',fontSize:'12px'}}>
             <div style={{display:'flex',justifyContent:'space-between',padding:'10px',background:'#ecfdf5',borderRadius:'8px'}}><span>Cash + MoMo + Check collected</span><b>{format(byPayment.filter(b=>['Cash','MoMo','Check'].includes(b.method)).reduce((s,b)=>s+b.total,0))}</b></div>
             <div style={{display:'flex',justifyContent:'space-between',padding:'10px',background:'#fffbeb',borderRadius:'8px'}}><span>Account receivables (to collect)</span><b>{format(receivable)}</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',padding:'10px',background:'#fef2f2',borderRadius:'8px'}}><span>Less: expenses paid</span><b>-{format(expenseTotal)}</b></div>
             <div style={{display:'flex',justifyContent:'space-between',padding:'10px',background:'#ede9fe',borderRadius:'8px'}}><span>Gift card liability (prepaid, owed as goods)</span><b>{format(giftLiab)}</b></div>
-            <div style={{display:'flex',justifyContent:'space-between',padding:'12px',background:'#0f2320',color:'#fff',borderRadius:'8px',fontWeight:800}}><span>Combined owner control total</span><b>{format(total+receivable)}</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',padding:'12px',background:'#0f2320',color:'#fff',borderRadius:'8px',fontWeight:800}}><span>Net position (revenue + receivable − expenses)</span><b>{format(total+receivable-expenseTotal)}</b></div>
           </div>
         </div>
 
@@ -901,8 +1228,15 @@ function ReportsPage({sales,products,customers,giftCards}){
           <div style={{marginTop:'10px'}}>
             {(()=>{
               const m=new Map(); filtered.forEach(s=>s.items?.forEach(it=>{ const cur=m.get(it.name)||{name:it.name,qty:0,rev:0}; cur.qty+=it.qty; cur.rev+=it.lineTotal; m.set(it.name,cur)})); const top=[...m.values()].sort((a,b)=>b.rev-a.rev).slice(0,5);
-              return top.length? top.map((p,i)=><div key={p.name} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderTop:'1px solid #f1f5f1'}}><span style={{width:'20px',height:'20px',borderRadius:'6px',background:'#f3f4f6',display:'grid',placeItems:'center',fontSize:'10px',fontWeight:800}}>{i+1}</span><span style={{flex:1}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.qty} units</small></span><b>{format(p.rev)}</b></div>) : <div className="empty-state"><b>No data</b></div>
+              return top.length? top.map((p,i)=><div key={p.name} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderTop:'1px solid #f1f5f1'}}><span style={{width:'20px',height:'20px',borderRadius:'6px',background:'#f3f4f6',display:'grid',placeItems:'center',fontSize:'10px',fontWeight:'800'}}>{i+1}</span><span style={{flex:1}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.qty} units</small></span><b>{format(p.rev)}</b></div>) : <div className="empty-state"><b>No data</b></div>
             })()}
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Recent expenses ({range})</h2><p className="sub">Latest recorded spending</p>
+          <div style={{marginTop:'10px'}}>
+            {filteredExp.length? filteredExp.slice(0,6).map(e=><div key={e.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderTop:'1px solid #f1f5f1'}}><span className="badge-pay" style={{background:'#fffbeb',color:'#92400e'}}>{e.category}</span><span style={{flex:1,minWidth:0}}><b style={{fontSize:'12px',display:'block',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.note||'Expense'}</b><small style={{fontSize:'10px',color:'#6b7d76'}}>{readableDate(e.date)} · {e.payment} · {e.by}</small></span><b style={{fontSize:'12px',color:'#991b1b'}}>-{format(e.amount)}</b></div>) : <div className="empty-state"><b>No expenses</b><small>Recorded expenses will appear here</small></div>}
           </div>
         </div>
       </div>
@@ -950,10 +1284,136 @@ function MessagesPage({messages,employees,currentUser,isOwner,onSend,onMarkRead}
   );
 }
 
+function ExpensesPage({expenses,onEdit,onAdd,onDelete}){
+  const [q,setQ]=useState('');
+  const [cat,setCat]=useState('All');
+  const [range,setRange]=useState('All');
+  const filtered = expenses.filter(e=>{
+    const matchesQ = `${e.category} ${e.note} ${e.payment} ${e.by}`.toLowerCase().includes(q.toLowerCase());
+    const matchesCat = cat==='All'||e.category===cat;
+    let matchesRange = true;
+    if(range==='Today') matchesRange = e.date===todayKey();
+    if(range==='Week'){ const d=new Date(); d.setDate(d.getDate()-7); matchesRange = e.date>=d.toISOString().slice(0,10) }
+    if(range==='Month') matchesRange = e.date.startsWith(new Date().toISOString().slice(0,7));
+    return matchesQ && matchesCat && matchesRange;
+  });
+  const total = filtered.reduce((s,e)=>s+Number(e.amount||0),0);
+  const todayTotal = expenses.filter(e=>e.date===todayKey()).reduce((s,e)=>s+Number(e.amount||0),0);
+  const weekTotal = expenses.filter(e=>{ const d=new Date(); d.setDate(d.getDate()-7); return e.date>=d.toISOString().slice(0,10) }).reduce((s,e)=>s+Number(e.amount||0),0);
+  const monthTotal = expenses.filter(e=>e.date.startsWith(new Date().toISOString().slice(0,7))).reduce((s,e)=>s+Number(e.amount||0),0);
+  const byCategory = expenseCategories.map(c=>({cat:c,total:filtered.filter(e=>e.category===c).reduce((s,e)=>s+Number(e.amount||0),0),count:filtered.filter(e=>e.category===c).length})).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
+  const maxCat = Math.max(1,...byCategory.map(c=>c.total));
+  return (
+    <div>
+      <div className="page-head"><div><div className="eyebrow"><Coins size={12}/> EXPENSES</div><h1>Expenses & business spending</h1><p>Record rent, utilities, supplies, transport and more. Expenses feed into business reports so net profit is accurate.</p></div><button className="btn primary" onClick={onAdd}><Plus size={16}/> Record expense</button></div>
+      <div className="kpi-row" style={{marginBottom:'12px'}}>
+        <span className="kpi"><CalendarDays size={14}/> Today <b>{format(todayTotal)}</b></span>
+        <span className="kpi"><Clock3 size={14}/> Last 7 days <b>{format(weekTotal)}</b></span>
+        <span className="kpi"><BarChart3 size={14}/> This month <b>{format(monthTotal)}</b></span>
+        <span className="kpi" style={{background:'#fffbeb'}}><Wallet size={14}/> Filtered total <b>{format(total)}</b></span>
+        <span className="kpi"><ClipboardList size={14}/> <b>{filtered.length}</b> entries</span>
+      </div>
+
+      <div className="grid layout-2" style={{marginBottom:'14px',alignItems:'start'}}>
+        <div className="card">
+          <div className="toolbar">
+            <div className="search" style={{maxWidth:'320px'}}><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search note, category, staff…"/></div>
+            <select value={cat} onChange={e=>setCat(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option>{expenseCategories.map(c=><option key={c}>{c}</option>)}</select>
+            <select value={range} onChange={e=>setRange(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>
+            <button className="btn small" onClick={()=>{ const header=['ID','Date','Category','Note','Payment','Recorded by','Amount']; const rows=filtered.map(e=>[e.id,e.date,e.category,e.note,e.payment,e.by,e.amount]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`expenses-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button>
+          </div>
+          <div className="table-wrap"><table><thead><tr><th>DATE</th><th>CATEGORY</th><th>NOTE</th><th>PAYMENT</th><th>RECORDED BY</th><th>AMOUNT</th><th></th></tr></thead><tbody>
+            {filtered.map(e=>(
+              <tr key={e.id}>
+                <td><b style={{fontSize:'12px'}}>{e.date===todayKey()?'Today':readableDate(e.date)}</b></td>
+                <td><span className="badge-pay" style={{background:'#fffbeb',color:'#92400e'}}>{e.category}</span></td>
+                <td>{e.note||'—'}</td>
+                <td><span className={`badge-pay ${String(e.payment||'').toLowerCase()}`}>{e.payment}</span></td>
+                <td>{e.by}</td>
+                <td><b style={{color:'#991b1b'}}>{format(e.amount)}</b></td>
+                <td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onEdit(e)}><Edit2 size={12}/> Edit</button><button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm('Delete this expense?')) onDelete(e.id)}}><Trash2 size={12}/></button></div></td>
+              </tr>
+            ))}
+          </tbody></table></div>
+          {filtered.length===0 && <div className="empty-state"><Coins size={20}/><b>No expenses found</b><small>Try different filters or record a new expense</small></div>}
+        </div>
+
+        <div className="card">
+          <h2>Spending by category</h2><p className="sub">Current filter selection</p>
+          {byCategory.length? (
+            <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'12px'}}>
+              {byCategory.map(c=>{
+                const pct = total? (c.total/total*100):0;
+                return <div key={c.cat}><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'4px'}}><span>{c.cat} · {c.count} {c.count===1?'entry':'entries'}</span><b>{format(c.total)} · {pct.toFixed(1)}%</b></div><div className="progress"><i style={{width:`${(c.total/maxCat)*100}%`,background:'linear-gradient(90deg,#d97706,#fbbf24)'}}/></div></div>
+              })}
+            </div>
+          ) : <div className="empty-state"><b>No data</b><small>Category breakdown appears once expenses are recorded</small></div>}
+          <div style={{marginTop:'14px',padding:'10px',borderRadius:'8px',background:'#fffbeb',border:'1px solid #fde68a',fontSize:'11px',color:'#92400e',display:'flex',gap:'8px'}}><AlertTriangle size={14}/><span><b>Tip:</b> keep transport and supplies costs logged so business reports show true net profit.</span></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Modals
 
+function StockModal({stock,onClose,onSave}){
+  const {product,mode}=stock;
+  const isRestock = mode==='restock';
+  const [qty,setQty]=useState(isRestock?'10':'1');
+  const [note,setNote]=useState('');
+  const [cost,setCost]=useState(product.cost??'');
+  const submit=(e)=>{
+    e.preventDefault();
+    onSave({product, mode, qty, note, cost: isRestock? cost : undefined});
+  };
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:isRestock?'#dbeafe':'#fef3c7',color:isRestock?'#1e40af':'#92400e',display:'grid',placeItems:'center'}}>{isRestock?<Plus size={18}/>:<AlertTriangle size={18}/>}</div><div><h3>{isRestock?'Restock — stock in':'Adjust stock'}</h3><p>{product.name} · current stock {product.stock} units</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <form onSubmit={submit}><div className="modal-body">
+          <div className="field"><label>{isRestock?'Quantity to add *':'Adjustment quantity (use minus for losses)'}</label><input type="number" step="1" value={qty} onChange={e=>setQty(e.target.value)} required/></div>
+          {isRestock && <div className="field"><label>Unit cost (GH₵) — updates product cost</label><input type="number" step="0.01" min="0" value={cost} onChange={e=>setCost(e.target.value)}/></div>}
+          <div className="field"><label>{isRestock?'Supplier / note':'Reason (damage, loss, count correction…)'}</label><input value={note} onChange={e=>setNote(e.target.value)} placeholder={isRestock?'e.g. Royal Farms delivery':'e.g. 2 packs damaged'}/></div>
+          <div style={{padding:'10px',background:'#f9fbf9',border:'1px solid #e7ece8',borderRadius:'8px',fontSize:'12px',display:'flex',justifyContent:'space-between'}}><span>Stock after this change</span><b>{Math.max(0, product.stock + (isRestock?Math.abs(Number(qty)||0):-Math.abs(Number(qty)||0)))} units</b></div>
+          <div style={{fontSize:'11px',color:'#6b7d76'}}>This change is recorded in the stock movement log with your name and the time.</div>
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" className="btn primary"><Check size={14}/>{isRestock?'Add stock':'Save adjustment'}</button></div></form>
+      </div>
+    </div>
+  );
+}
+
+function ExpenseModal({expense,onClose,onSave,employees}){
+  const [form,setForm]=useState(expense||{date:todayKey(),category:'Supplies',amount:'',payment:'Cash',note:''});
+  const [err,setErr]=useState('');
+  const submit=(e)=>{
+    e.preventDefault();
+    if(!form.amount || Number(form.amount)<=0){ setErr('Enter a valid amount'); return }
+    onSave({
+      id: expense?.id || uid('x'),
+      date: form.date || todayKey(),
+      category: form.category,
+      amount: Number(form.amount),
+      payment: form.payment,
+      note: (form.note||'').trim(),
+      by: expense?.by || employees?.find(e=>e.role==='owner')?.name || 'Owner',
+    });
+  };
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#fffbeb',color:'#92400e',display:'grid',placeItems:'center'}}><Coins size={18}/></div><div><h3>{expense?'Edit expense':'Record expense'}</h3><p>Business spending — shows in reports</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <form onSubmit={submit}><div className="modal-body">
+          <div className="two"><div className="field"><label>Date *</label><input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} required/></div><div className="field"><label>Category *</label><select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>{expenseCategories.map(c=><option key={c}>{c}</option>)}</select></div></div>
+          <div className="two"><div className="field"><label>Amount (GH₵) *</label><input type="number" step="0.01" min="0" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} required/></div><div className="field"><label>Paid by</label><select value={form.payment} onChange={e=>setForm(f=>({...f,payment:e.target.value}))}><option>Cash</option><option>MoMo</option><option>Check</option><option>Account</option></select></div></div>
+          <div className="field"><label>Note</label><input value={form.note||''} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="e.g. Electricity top-up (ECG)"/></div>
+          {err && <div style={{color:'#b91c1c',fontSize:'12px'}}>{err}</div>}
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" className="btn primary"><Check size={14}/>{expense?'Save changes':'Record expense'}</button></div></form>
+      </div>
+    </div>
+  );
+}
+
 function ProductModal({product,categories,onClose,onSave}){
-  const [form,setForm]=useState(product||{name:'',sku:'',category:categories[0]||'Groceries',brand:'',price:'',cost:'',stock:'',barcode:''});
+  const [form,setForm]=useState(product||{name:'',sku:'',category:categories[0]||'Groceries',brand:'',price:'',cost:'',stock:'',barcode:'',supplier:'',lowStockAt:5});
   const [err,setErr]=useState('');
   const submit = (e)=>{
     e.preventDefault();
@@ -969,6 +1429,8 @@ function ProductModal({product,categories,onClose,onSave}){
       cost: Number(form.cost||0),
       stock: Math.floor(Number(form.stock)),
       barcode: form.barcode.trim(),
+      supplier: form.supplier?.trim()||'',
+      lowStockAt: Math.max(0, Math.floor(Number(form.lowStockAt ?? 5))),
       color: product?.color||['mint','peach','blue','violet'][Math.floor(Math.random()*4)],
     };
     onSave(p);
@@ -980,7 +1442,8 @@ function ProductModal({product,categories,onClose,onSave}){
           <div className="field"><label>Product name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Jasmine Rice 5kg" required/></div>
           <div className="two"><div className="field"><label>Category *</label><select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>{categories.map(c=><option key={c}>{c}</option>)}</select></div><div className="field"><label>Brand / size</label><input value={form.brand} onChange={e=>setForm(f=>({...f,brand:e.target.value}))} placeholder="e.g. 5kg"/></div></div>
           <div className="two"><div className="field"><label>Selling price (GH₵) *</label><input type="number" step="0.01" min="0" value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))} required/></div><div className="field"><label>Cost price (for profit)</label><input type="number" step="0.01" min="0" value={form.cost} onChange={e=>setForm(f=>({...f,cost:e.target.value}))} placeholder="0"/></div></div>
-          <div className="two"><div className="field"><label>Stock quantity *</label><input type="number" min="0" step="1" value={form.stock} onChange={e=>setForm(f=>({...f,stock:e.target.value}))} required/></div><div className="field"><label>SKU</label><input value={form.sku} onChange={e=>setForm(f=>({...f,sku:e.target.value}))} placeholder="Auto if empty"/></div></div>
+          <div className="two"><div className="field"><label>Stock quantity *</label><input type="number" min="0" step="1" value={form.stock} onChange={e=>setForm(f=>({...f,stock:e.target.value}))} required/></div><div className="field"><label>Reorder level (low stock alert at)</label><input type="number" min="0" step="1" value={form.lowStockAt??5} onChange={e=>setForm(f=>({...f,lowStockAt:e.target.value}))}/></div></div>
+          <div className="two"><div className="field"><label>SKU</label><input value={form.sku} onChange={e=>setForm(f=>({...f,sku:e.target.value}))} placeholder="Auto if empty"/></div><div className="field"><label>Supplier (optional)</label><input value={form.supplier||''} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))} placeholder="e.g. Royal Farms"/></div></div>
           <div className="field"><label>Barcode (optional)</label><input value={form.barcode} onChange={e=>setForm(f=>({...f,barcode:e.target.value}))} placeholder="Scan or enter"/></div>
           {err && <div style={{color:'#b91c1c',fontSize:'12px'}}>{err}</div>}
         </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" className="btn primary"><Check size={14}/>{product?'Save changes':'Add item'}</button></div></form>
