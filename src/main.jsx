@@ -224,6 +224,7 @@ function App(){
   };
 
   const applyStockChange = ({product, mode, qty, note, cost})=>{
+    if(!isOwner){ flash('Only the owner can manage stock'); return }
     const amount = Math.floor(Number(qty));
     if(!product || !amount){ flash('Enter a quantity'); return }
     const delta = mode==='restock' ? Math.abs(amount) : -Math.abs(amount);
@@ -275,6 +276,7 @@ function App(){
 
   // Products
   const saveProduct = (prod)=>{
+    if(!isOwner){ flash('Only the owner can manage product records'); return }
     if(editingProduct){
       const prevStock = editingProduct.stock||0;
       setProducts(p=>p.map(x=>x.id===prod.id?prod:x));
@@ -443,7 +445,7 @@ function App(){
     addActivity({type:'sale',title:`${sale.cashier} completed a sale`,detail:`${format(total)} · ${payment}`});
     setCart([]); setDiscountOn(false); setShowPay(false); setMobileCart(false);
     setSuccess(sale);
-    if(lowNow.length){ setTimeout(()=>flash(`Low stock alert: ${lowNow.join(', ')} — restock soon`), 400); }
+    if(isOwner && lowNow.length){ setTimeout(()=>flash(`Low stock alert: ${lowNow.join(', ')} — restock soon`), 400); }
   };
 
   const todaySales = useMemo(()=> sales.filter(s=>s.date===todayKey()),[sales]);
@@ -502,7 +504,7 @@ function App(){
             {nav.map(n=>(
               <button key={n.id} className={`nav-item ${view===n.id?'active':''}`} onClick={()=>setView(n.id)}>
                 <n.icon size={18}/><span>{n.label}</span>
-                {n.id==='inventory' && lowStockItems.length>0 && <span className="badge">{lowStockItems.length}</span>}
+                {n.id==='inventory' && isOwner && lowStockItems.length>0 && <span className="badge">{lowStockItems.length}</span>}
                 {n.id==='messages' && messages.filter(m=> (m.to==='all' || m.to===currentUser?.id) && !m.readBy?.includes(currentUser?.id)).length>0 && <span className="badge">{messages.filter(m=> (m.to==='all' || m.to===currentUser?.id) && !m.readBy?.includes(currentUser?.id)).length}</span>}
               </button>
             ))}
@@ -537,7 +539,7 @@ function App(){
             <button className={`btn small ${todayAttendance && !todayAttendance.out?'primary':'ghost'}`} onClick={toggleClock} title="Staff clock in / out">
               <AlarmClock size={14}/><span className="clock-text">{todayAttendance ? (todayAttendance.out?`Out ${todayAttendance.out}`:`In ${todayAttendance.in}`) : 'Clock in'}</span>
             </button>
-            <div className="bell-wrap">
+            {isOwner && <div className="bell-wrap">
               <button className="btn icon small bell" onClick={()=>setAlertsOpen(o=>!o)} title="Low stock alerts">
                 <Bell size={14}/>{lowStockItems.length>0 && <span className="bell-badge">{lowStockItems.length}</span>}
               </button>
@@ -558,7 +560,7 @@ function App(){
                   <button className="btn small" style={{width:'100%',marginTop:'8px'}} onClick={()=>{setView('inventory');setAlertsOpen(false)}}><Package size={13}/> Open stock management</button>
                 </div>
               </>}
-            </div>
+            </div>}
             <div className="user-menu"><div className={`avatar ${isOwner?'owner':'cashier'}`} style={{width:'28px',height:'28px',fontSize:'11px'}}>{currentUser?.initials||'U'}</div><span style={{fontSize:'12px',fontWeight:700,maxWidth:'110px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{currentUser?.name}</span></div>
             <button className="logout" onClick={signOut}><LogOut size={14}/> Sign out</button>
           </div>
@@ -572,7 +574,7 @@ function App(){
             customers={customers} selectedCustomerId={selectedCustomerId} setSelectedCustomerId={setSelectedCustomerId}
             subtotal={subtotal} discount={discount} total={total} itemCount={itemCount} discountOn={discountOn} setDiscountOn={setDiscountOn}
             showPay={showPay} setShowPay={setShowPay} mobileCart={mobileCart} setMobileCart={setMobileCart}
-            completeSale={completeSale} giftCards={giftCards}
+            completeSale={completeSale} giftCards={giftCards} isOwner={isOwner}
             onAddProduct={()=>{setEditingProduct(null);setShowProductModal(true)}}
           />}
           {view==='inventory' && <InventoryPage products={products} setProducts={setProducts} search={search} setSearch={setSearch} cat={cat} setCat={setCat} categories={categories} isOwner={isOwner} stockMoves={stockMoves} onEdit={(p)=>{setEditingProduct(p);setShowProductModal(true)}} onDelete={deleteProduct} onAdd={()=>{setEditingProduct(null);setShowProductModal(true)}} onStock={(p,mode)=>setStockModal({product:p,mode})} />}
@@ -759,7 +761,7 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
   );
 }
 
-function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,cart,setCart,addToCart,updateQty,removeFromCart,customers,selectedCustomerId,setSelectedCustomerId,subtotal,discount,total,itemCount,discountOn,setDiscountOn,showPay,setShowPay,mobileCart,setMobileCart,completeSale,giftCards,onAddProduct}){
+function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,cart,setCart,addToCart,updateQty,removeFromCart,customers,selectedCustomerId,setSelectedCustomerId,subtotal,discount,total,itemCount,discountOn,setDiscountOn,showPay,setShowPay,mobileCart,setMobileCart,completeSale,giftCards,onAddProduct,isOwner}){
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> POINT OF SALE</div><h1>Make a sale — Cash, MoMo &amp; Gift</h1><p>Fast drug store checkout. Select customer, add items, choose payment. All sales combine to the owner.</p></div><div className="kpi-row"><span className="kpi"><Package size={14}/> {allProducts.length} items</span><span className="kpi"><Users size={14}/> {customers.length-1} customers</span></div></div>
@@ -769,7 +771,7 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
           <div className="card" style={{padding:'12px'}}>
             <div className="search-row">
               <div className="search"><Search size={16} color="#6b7d76"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, SKU, barcode…"/><span style={{fontSize:'10px',color:'#94a8a1',border:'1px solid #e7ece8',padding:'2px 6px',borderRadius:'4px'}}>⌘K</span></div>
-              <button className="btn small" onClick={onAddProduct}><Plus size={14}/> Add item</button>
+              {isOwner && <button className="btn small" onClick={onAddProduct}><Plus size={14}/> Add item</button>}
             </div>
             <div className="chips" style={{marginTop:'10px'}}>
               {categories.map(c=><button key={c} className={`chip-btn ${cat===c?'active':''}`} onClick={()=>setCat(c)}>{c}{c==='All'&&` (${allProducts.length})`}</button>)}
@@ -780,7 +782,7 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
           <div className="products">
             {products.map(p=>(
               <button key={p.id} className="prod" onClick={()=>addToCart(p)} disabled={p.stock<1}>
-                <div className="prod-top"><div className={`prod-img ${p.color}`}>{p.name.slice(0,2).toUpperCase()}</div><span className={`stock ${p.stock<=reorderOf(p)?'low':''}`}>{p.stock<=reorderOf(p)?`${p.stock} left`:'In stock'}</span></div>
+                <div className="prod-top"><div className={`prod-img ${p.color}`}>{p.name.slice(0,2).toUpperCase()}</div><span className={`stock ${isOwner&&p.stock<=reorderOf(p)?'low':''}`}>{p.stock<1?'Out of stock':(isOwner&&p.stock<=reorderOf(p)?`${p.stock} left`:'In stock')}</span></div>
                 <b>{p.name}</b><small>{p.brand} · {p.category}</small>
                 <div className="prod-foot"><strong>{format(p.price)}</strong><span className="add"><Plus size={14}/></span></div>
               </button>
@@ -852,46 +854,47 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
   const stockValue = products.reduce((s,p)=>s+Number(p.cost||0)*Number(p.stock||0),0);
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Package size={12}/> STOCK & ITEM LIST</div><h1>Stock management & item records</h1><p>Manage products, reorder levels and stock. Restock in, record damage/loss, and follow every unit in the movement log. Low stock alerts are on.</p></div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
+      <div className="page-head"><div><div className="eyebrow"><Package size={12}/> {isOwner?'STOCK & ITEM LIST':'ITEM LIST'}</div><h1>{isOwner?'Stock management & item records':'Item list'}</h1><p>{isOwner?'Manage products, reorder levels and stock. Restock in, record damage/loss, and follow every unit in the movement log. Low stock alerts and profit tracking are owner-only.':'Browse products, prices and availability. Cost, profit and reorder tracking are managed by the owner.'}</p></div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
       <div className="kpi-row" style={{marginBottom:'12px'}}>
         <span className="kpi"><Package size={14}/> <b>{products.length}</b> total items</span>
-        <span className="kpi" style={{color:low?'#92400e':'#065f46',background:low?'#fef3c7':'#ecfdf5'}}><AlertTriangle size={14}/> <b>{low}</b> low stock</span>
-        <span className="kpi" style={{color:out?'#991b1b':'#065f46',background:out?'#fef2f2':'#ecfdf5'}}><TrendingDown size={14}/> <b>{out}</b> out of stock</span>
-        <span className="kpi"><Wallet size={14}/> Stock value <b>{format(stockValue)}</b></span>
-        <span className="kpi"><History size={14}/> <b>{stockMoves.length}</b> stock moves</span>
+        {isOwner && <span className="kpi" style={{color:low?'#92400e':'#065f46',background:low?'#fef3c7':'#ecfdf5'}}><AlertTriangle size={14}/> <b>{low}</b> low stock</span>}
+        {isOwner && <span className="kpi" style={{color:out?'#991b1b':'#065f46',background:out?'#fef2f2':'#ecfdf5'}}><TrendingDown size={14}/> <b>{out}</b> out of stock</span>}
+        {isOwner && <span className="kpi"><Wallet size={14}/> Stock value <b>{format(stockValue)}</b></span>}
+        {isOwner && <span className="kpi"><History size={14}/> <b>{stockMoves.length}</b> stock moves</span>}
       </div>
       <div className="card">
         <div className="toolbar">
-          <div className="search" style={{maxWidth:'380px'}}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search items, SKU, brand, supplier…"/></div>
+          <div className="search" style={{maxWidth:'380px'}}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={isOwner?'Search items, SKU, brand, supplier…':'Search items, SKU, brand…'}/></div>
           <select value={cat} onChange={e=>setCat(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option>{categories.filter(c=>c!=='All').map(c=><option key={c}>{c}</option>)}</select>
-          <div className="chips">{['All','Low','Out'].map(f=><button key={f} className={`chip-btn ${stockFilter===f?'active':''}`} onClick={()=>setStockFilter(f)}>{f==='All'?'All stock':f==='Low'?'Low stock':'Out of stock'}</button>)}</div>
+          {isOwner && <div className="chips">{['All','Low','Out'].map(f=><button key={f} className={`chip-btn ${stockFilter===f?'active':''}`} onClick={()=>setStockFilter(f)}>{f==='All'?'All stock':f==='Low'?'Low stock':'Out of stock'}</button>)}</div>}
         </div>
-        <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th><th>REORDER AT</th><th>COST</th><th>PRICE</th><th>PROFIT</th><th>STATUS</th><th></th></tr></thead><tbody>
+        <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th>{isOwner&&<th>REORDER AT</th>}{isOwner&&<th>COST</th>}<th>PRICE</th>{isOwner&&<th>PROFIT</th>}<th>STATUS</th>{isOwner&&<th></th>}</tr></thead><tbody>
           {filtered.map(p=>{
             const profit = p.price - (p.cost||0);
             const margin = p.price? (profit/p.price*100):0;
             return <tr key={p.id}>
-              <td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className={`prod-img ${p.color}`} style={{width:'32px',height:'32px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div><span><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.brand}{p.supplier?` · ${p.supplier}`:''}</small></span></div></td>
+              <td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className={`prod-img ${p.color}`} style={{width:'32px',height:'32px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div><span><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.brand}{isOwner&&p.supplier?` · ${p.supplier}`:''}</small></span></div></td>
               <td>{p.sku}</td><td>{p.category}</td>
-              <td><b style={{color:p.stock<=reorderOf(p)?'#92400e':'#065f46'}}>{p.stock}</b> units</td>
-              <td>{reorderOf(p)}</td>
-              <td>{format(p.cost||0)}</td><td><b>{format(p.price)}</b></td>
-              <td><span style={{color:profit>0?'#065f46':'#991b1b'}}>{format(profit)} ({margin.toFixed(0)}%)</span></td>
-              <td><span className={`status ${p.stock===0?'bad':p.stock<=reorderOf(p)?'warn':'ok'}`}><i/>{p.stock===0?'Out':p.stock<=reorderOf(p)?'Low':'In stock'}</span></td>
-              <td><div style={{display:'flex',gap:'4px'}}>
-                {isOwner && <button className="btn small" title="Restock in" onClick={()=>onStock(p,'restock')}><Plus size={12}/> Stock</button>}
-                {isOwner && <button className="btn small" title="Adjust (damage/loss/count)" onClick={()=>onStock(p,'adjust')}>± Adj</button>}
+              <td><b style={{color:isOwner&&p.stock<=reorderOf(p)?'#92400e':'#065f46'}}>{p.stock}</b> units</td>
+              {isOwner&&<td>{reorderOf(p)}</td>}
+              {isOwner&&<td>{format(p.cost||0)}</td>}
+              <td><b>{format(p.price)}</b></td>
+              {isOwner&&<td><span style={{color:profit>0?'#065f46':'#991b1b'}}>{format(profit)} ({margin.toFixed(0)}%)</span></td>}
+              <td><span className={`status ${p.stock===0?'bad':(isOwner&&p.stock<=reorderOf(p))?'warn':'ok'}`}><i/>{p.stock===0?'Out':(isOwner&&p.stock<=reorderOf(p))?'Low':'In stock'}</span></td>
+              {isOwner&&<td><div style={{display:'flex',gap:'4px'}}>
+                <button className="btn small" title="Restock in" onClick={()=>onStock(p,'restock')}><Plus size={12}/> Stock</button>
+                <button className="btn small" title="Adjust (damage/loss/count)" onClick={()=>onStock(p,'adjust')}>± Adj</button>
                 <button className="btn small" onClick={()=>onEdit(p)}><Edit2 size={12}/> Edit</button>
-                {isOwner && <button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm(`Delete ${p.name}?`)) onDelete(p.id)}}><Trash2 size={12}/></button>}
-              </div></td>
+                <button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm(`Delete ${p.name}?`)) onDelete(p.id)}}><Trash2 size={12}/></button>
+              </div></td>}
             </tr>
           })}
         </tbody></table></div>
         {filtered.length===0 && <div className="empty-state"><b>No items</b><small>Try different filter</small></div>}
-        <div style={{display:'flex',justifyContent:'space-between',padding:'10px 2px 2px',fontSize:'11px',color:'#6b7d76'}}><span>Showing {filtered.length} of {products.length}</span><span>Owner controls inventory</span></div>
+        <div style={{display:'flex',justifyContent:'space-between',padding:'10px 2px 2px',fontSize:'11px',color:'#6b7d76'}}><span>Showing {filtered.length} of {products.length}</span><span>{isOwner?'Owner controls inventory':'Owner controls product records'}</span></div>
       </div>
 
-      <div className="card" style={{marginTop:'14px'}}>
+      {isOwner && <div className="card" style={{marginTop:'14px'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div><h2>Stock movement log</h2><p className="sub">Every unit in and out — sales, restocks and adjustments</p></div><History size={16} color="#6b7d76"/></div>
         <div className="table-wrap"><table><thead><tr><th>DATE</th><th>PRODUCT</th><th>TYPE</th><th>QTY</th><th>BY</th><th>NOTE</th></tr></thead><tbody>
           {stockMoves.slice(0,15).map(m=>{
@@ -906,7 +909,7 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
           })}
         </tbody></table></div>
         {stockMoves.length===0 && <div className="empty-state"><History size={20}/><b>No stock moves yet</b><small>Restocks, sales and adjustments will appear here</small></div>}
-      </div>
+      </div>}
     </div>
   );
 }
