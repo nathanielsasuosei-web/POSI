@@ -9,6 +9,7 @@ import {
   Bell, ClipboardList, History, Coins, AlarmClock, TrendingDown
 } from 'lucide-react';
 import './style.css';
+import { useOfflineSupport, OfflineBanner, OfflineChip } from './offline.jsx';
 
 // Storage keys
 const K = {
@@ -139,7 +140,7 @@ function usePersistent(key, initial){
   return [val,setVal];
 }
 
-function App(){
+function App({offline}){
   const [products,setProducts]=usePersistent(K.products, starterProducts);
   const [sales,setSales]=usePersistent(K.sales, starterSales);
   const [customers,setCustomers]=usePersistent(K.customers, starterCustomers);
@@ -534,7 +535,7 @@ function App(){
         <header className="topbar">
           <div className="breadcrumb"><span>Green Cross</span><span>›</span><b>{nav.find(n=>n.id===view)?.label||view}</b></div>
           <div className="top-actions">
-            <span className={`chip ${online?'online':'offline'}`}><i/> {online?'Online':'Offline'}</span>
+            <OfflineChip status={offline.status} online={online}/>
             <span className="today"><Clock3 size={14}/>{fullDate()}</span>
             <button className={`btn small ${todayAttendance && !todayAttendance.out?'primary':'ghost'}`} onClick={toggleClock} title="Staff clock in / out">
               <AlarmClock size={14}/><span className="clock-text">{todayAttendance ? (todayAttendance.out?`Out ${todayAttendance.out}`:`In ${todayAttendance.in}`) : 'Clock in'}</span>
@@ -1692,4 +1693,9 @@ function ReceiptModal({sale,onClose}){
   );
 }
 
-createRoot(document.getElementById('root')).render(<App/>);
+function Root(){
+  const offline = useOfflineSupport();
+  return <><App offline={offline}/><OfflineBanner {...offline}/></>;
+}
+
+createRoot(document.getElementById('root')).render(<Root/>);
