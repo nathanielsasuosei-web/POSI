@@ -65,18 +65,18 @@ const paymentMethods = [
 ];
 
 const starterProducts = [
-  { id:'p1', name:'Paracetamol 500mg', sku:'PARA-500', category:'Pain Relief', price:12.5, cost:7, stock:48, barcode:'890123', color:'mint', brand:'20 tablets', supplier:'Ernest Chemists' },
-  { id:'p2', name:'Ibuprofen 400mg', sku:'IBU-400', category:'Pain Relief', price:18, cost:11, stock:28, barcode:'890124', color:'peach', brand:'20 tablets', supplier:'Ernest Chemists' },
-  { id:'p3', name:'Amoxicillin 500mg', sku:'AMOX-500', category:'Antibiotics', price:35, cost:22, stock:24, barcode:'890125', color:'blue', brand:'21 capsules', supplier:'M&G Pharma' },
-  { id:'p4', name:'Coartem 20/120', sku:'COART-24', category:'Antimalarials', price:85, cost:62, stock:19, barcode:'890126', color:'peach', brand:'24 tablets', supplier:'Novartis GH' },
-  { id:'p5', name:'Malaria Test Kit', sku:'MAL-TEST', category:'Devices', price:25, cost:16, stock:7, barcode:'890127', color:'violet', brand:'SD Bioline', supplier:'Lab Supplies Ltd' },
-  { id:'p6', name:'ORS Sachet', sku:'ORS-SACH', category:'First Aid', price:6, cost:3.5, stock:33, barcode:'890128', color:'blue', brand:'Cerlyte', supplier:'Uniliver Ghana' },
-  { id:'p7', name:'Vitamin C 1000mg', sku:'VITC-1000', category:'Vitamins', price:45, cost:32, stock:51, barcode:'890129', color:'mint', brand:'60 tablets', supplier:'Vita Health' },
-  { id:'p8', name:'Digital Thermometer', sku:'THERM-D', category:'Devices', price:42, cost:26, stock:22, barcode:'890130', color:'violet', brand:'CarePlus', supplier:'Lab Supplies Ltd' },
-  { id:'p9', name:'Cough Syrup 100ml', sku:'COUGH-100', category:'Cough & Cold', price:22, cost:14, stock:48, barcode:'890131', color:'mint', brand:'Cofex', supplier:'M&G Pharma' },
-  { id:'p10', name:'Baby Diapers Size 3', sku:'DIAP-3', category:'Baby & Mother', price:65, cost:48, stock:3, barcode:'890132', color:'peach', brand:'Pampers Care', supplier:'Uniliver Ghana' },
-  { id:'p11', name:'Antiseptic Cream 30g', sku:'ANTIS-30', category:'Personal Care', price:24, cost:16, stock:60, barcode:'890133', color:'blue', brand:'Savlon', supplier:'Ernest Chemists' },
-  { id:'p12', name:'First Aid Kit Basic', sku:'AID-KIT', category:'First Aid', price:95, cost:70, stock:15, barcode:'890134', color:'mint', brand:'MediKit', supplier:'Lab Supplies Ltd' },
+  { id:'p1', name:'Paracetamol 500mg', sku:'PARA-500', category:'Pain Relief', price:12.5, cost:7, stock:48, barcode:'890123', brand:'20 tablets', supplier:'Ernest Chemists' },
+  { id:'p2', name:'Ibuprofen 400mg', sku:'IBU-400', category:'Pain Relief', price:18, cost:11, stock:28, barcode:'890124', brand:'20 tablets', supplier:'Ernest Chemists' },
+  { id:'p3', name:'Amoxicillin 500mg', sku:'AMOX-500', category:'Antibiotics', price:35, cost:22, stock:24, barcode:'890125', brand:'21 capsules', supplier:'M&G Pharma' },
+  { id:'p4', name:'Coartem 20/120', sku:'COART-24', category:'Antimalarials', price:85, cost:62, stock:19, barcode:'890126', brand:'24 tablets', supplier:'Novartis GH' },
+  { id:'p5', name:'Malaria Test Kit', sku:'MAL-TEST', category:'Devices', price:25, cost:16, stock:7, barcode:'890127', brand:'SD Bioline', supplier:'Lab Supplies Ltd' },
+  { id:'p6', name:'ORS Sachet', sku:'ORS-SACH', category:'First Aid', price:6, cost:3.5, stock:33, barcode:'890128', brand:'Cerlyte', supplier:'Uniliver Ghana' },
+  { id:'p7', name:'Vitamin C 1000mg', sku:'VITC-1000', category:'Vitamins', price:45, cost:32, stock:51, barcode:'890129', brand:'60 tablets', supplier:'Vita Health' },
+  { id:'p8', name:'Digital Thermometer', sku:'THERM-D', category:'Devices', price:42, cost:26, stock:22, barcode:'890130', brand:'CarePlus', supplier:'Lab Supplies Ltd' },
+  { id:'p9', name:'Cough Syrup 100ml', sku:'COUGH-100', category:'Cough & Cold', price:22, cost:14, stock:48, barcode:'890131', brand:'Cofex', supplier:'M&G Pharma' },
+  { id:'p10', name:'Baby Diapers Size 3', sku:'DIAP-3', category:'Baby & Mother', price:65, cost:48, stock:3, barcode:'890132', brand:'Pampers Care', supplier:'Uniliver Ghana' },
+  { id:'p11', name:'Antiseptic Cream 30g', sku:'ANTIS-30', category:'Personal Care', price:24, cost:16, stock:60, barcode:'890133', brand:'Savlon', supplier:'Ernest Chemists' },
+  { id:'p12', name:'First Aid Kit Basic', sku:'AID-KIT', category:'First Aid', price:95, cost:70, stock:15, barcode:'890134', brand:'MediKit', supplier:'Lab Supplies Ltd' },
 ];
 
 const starterCustomers = [
@@ -550,7 +550,6 @@ function App(){
                   <div className="alert-pop-list">
                     {lowStockItems.length? lowStockItems.map(p=>(
                       <div key={p.id} className="alert-row">
-                        <div className={`prod-img ${p.color}`} style={{width:'28px',height:'28px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div>
                         <div style={{flex:1,minWidth:0}}><b style={{fontSize:'11px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.stock} left · reorder at {reorderOf(p)}</small></div>
                         <span className={`status ${p.stock===0?'bad':'warn'}`}><i/>{p.stock===0?'Out':'Low'}</span>
                         {isOwner && <button className="btn small" onClick={()=>{setStockModal({product:p,mode:'restock'});setAlertsOpen(false)}}>Restock</button>}
@@ -732,7 +731,6 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
             <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
               {lowStock.slice(0,6).map(p=>(
                 <div key={p.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',border:'1px solid #fde68a',background:'#fffbeb',borderRadius:'8px'}}>
-                  <div className={`prod-img ${p.color}`} style={{width:'28px',height:'28px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div>
                   <div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#92400e'}}>{p.stock} left · reorder at {reorderOf(p)}</small></div>
                   <span className={`status ${p.stock===0?'bad':'warn'}`}><i/>{p.stock===0?'Out':'Low'}</span>
                   <button className="btn small" onClick={()=>onRestock(p)}>Restock</button>
@@ -782,9 +780,9 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
           <div className="products">
             {products.map(p=>(
               <button key={p.id} className="prod" onClick={()=>addToCart(p)} disabled={p.stock<1}>
-                <div className="prod-top"><div className={`prod-img ${p.color}`}>{p.name.slice(0,2).toUpperCase()}</div><span className={`stock ${isOwner&&p.stock<=reorderOf(p)?'low':''}`}>{p.stock<1?'Out of stock':(isOwner&&p.stock<=reorderOf(p)?`${p.stock} left`:'In stock')}</span></div>
+                <div className="prod-top"><span className={`stock ${isOwner&&p.stock<=reorderOf(p)?'low':''}`}>{p.stock<1?'Out of stock':(isOwner&&p.stock<=reorderOf(p)?`${p.stock} left`:'In stock')}</span></div>
                 <b>{p.name}</b><small>{p.brand} · {p.category}</small>
-                <div className="prod-foot"><strong>{format(p.price)}</strong><span className="add"><Plus size={14}/></span></div>
+                <div className="prod-foot"><strong>{format(p.price)}</strong><span className="add">Add</span></div>
               </button>
             ))}
           </div>
@@ -805,7 +803,6 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
           <div className="cart-list">
             {cart.length? cart.map(i=>(
               <div className="cart-item" key={i.id}>
-                <div style={{width:'36px',height:'36px',borderRadius:'8px',background:'#ecfdf5',display:'grid',placeItems:'center',fontSize:'10px',fontWeight:800,color:'#065f46'}}>{i.name.slice(0,2).toUpperCase()}</div>
                 <div style={{flex:1,minWidth:0}}><b>{i.name}</b><small>{format(i.price)} · {i.brand||i.category}</small><div className="qty"><button onClick={()=>updateQty(i.id,-1)}><Minus size={12}/></button><span>{i.qty}</span><button onClick={()=>updateQty(i.id,1)}><Plus size={12}/></button></div></div>
                 <div className="line-total"><b>{format(i.price*i.qty)}</b><button onClick={()=>removeFromCart(i.id)}><X size={14}/></button></div>
               </div>
@@ -873,7 +870,7 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
             const profit = p.price - (p.cost||0);
             const margin = p.price? (profit/p.price*100):0;
             return <tr key={p.id}>
-              <td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className={`prod-img ${p.color}`} style={{width:'32px',height:'32px',fontSize:'9px'}}>{p.name.slice(0,2).toUpperCase()}</div><span><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.brand}{isOwner&&p.supplier?` · ${p.supplier}`:''}</small></span></div></td>
+              <td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><span><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.brand}{isOwner&&p.supplier?` · ${p.supplier}`:''}</small></span></div></td>
               <td>{p.sku}</td><td>{p.category}</td>
               <td><b style={{color:isOwner&&p.stock<=reorderOf(p)?'#92400e':'#065f46'}}>{p.stock}</b> units</td>
               {isOwner&&<td>{reorderOf(p)}</td>}
@@ -1468,7 +1465,6 @@ function ProductModal({product,categories,onClose,onSave}){
       barcode: form.barcode.trim(),
       supplier: form.supplier?.trim()||'',
       lowStockAt: Math.max(0, Math.floor(Number(form.lowStockAt ?? 5))),
-      color: product?.color||['mint','peach','blue','violet'][Math.floor(Math.random()*4)],
     };
     onSave(p);
   };
