@@ -29,8 +29,18 @@ function offlinePrecachePlugin() {
   };
 }
 
+// The browser only ever calls /api on its own origin. In development and
+// preview, Vite forwards those requests to the Express backend.
+const apiTarget = process.env.POSI_API_URL || 'http://127.0.0.1:8787';
+const proxy = {
+  '/api': {
+    target: apiTarget,
+    changeOrigin: true,
+  },
+};
+
 export default defineConfig({
   plugins: [react(), offlinePrecachePlugin()],
-  server: { host: '0.0.0.0', allowedHosts: true },
-  preview: { host: '0.0.0.0', allowedHosts: true },
+  server: { host: '0.0.0.0', allowedHosts: true, proxy },
+  preview: { host: '0.0.0.0', allowedHosts: true, proxy },
 });

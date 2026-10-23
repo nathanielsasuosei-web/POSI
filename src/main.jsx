@@ -6,23 +6,11 @@ import {
   Search, Plus, Minus, X, Check, LogOut, Store, Clock3, TrendingUp, AlertTriangle,
   ArrowRight, ChevronDown, Download, Printer, ShieldCheck, CalendarDays, UserRound,
   CheckCircle2, DollarSign, PiggyBank, Landmark, Mail, Send, Eye, Edit2, Trash2, UserPlus,
-  Bell, ClipboardList, History, Coins, AlarmClock, TrendingDown
+  Bell, ClipboardList, History, Coins, AlarmClock, TrendingDown,
+  RefreshCw, CloudOff, Cloud, WifiOff, Loader2
 } from 'lucide-react';
+import { usePosiData } from './usePosiData';
 import './style.css';
-
-// Storage keys
-const K = {
-  products: 'posi-v3-products',
-  sales: 'posi-v3-sales',
-  customers: 'posi-v3-customers',
-  employees: 'posi-v3-employees',
-  giftCards: 'posi-v3-giftcards',
-  messages: 'posi-v3-messages',
-  activities: 'posi-v3-activities',
-  attendance: 'posi-v3-attendance',
-  expenses: 'posi-v3-expenses',
-  stockMoves: 'posi-v3-stockmoves',
-};
 
 // helpers
 const format = (n) => `GH₵ ${Number(n || 0).toFixed(2)}`;
@@ -64,102 +52,17 @@ const paymentMethods = [
   { id:'Gift', label:'Gift', icon: Gift, desc:'Gift card' },
 ];
 
-const starterProducts = [
-  { id:'p1', name:'Paracetamol 500mg', sku:'PARA-500', category:'Pain Relief', price:12.5, cost:7, stock:48, barcode:'890123', color:'mint', brand:'20 tablets', supplier:'Ernest Chemists' },
-  { id:'p2', name:'Ibuprofen 400mg', sku:'IBU-400', category:'Pain Relief', price:18, cost:11, stock:28, barcode:'890124', color:'peach', brand:'20 tablets', supplier:'Ernest Chemists' },
-  { id:'p3', name:'Amoxicillin 500mg', sku:'AMOX-500', category:'Antibiotics', price:35, cost:22, stock:24, barcode:'890125', color:'blue', brand:'21 capsules', supplier:'M&G Pharma' },
-  { id:'p4', name:'Coartem 20/120', sku:'COART-24', category:'Antimalarials', price:85, cost:62, stock:19, barcode:'890126', color:'peach', brand:'24 tablets', supplier:'Novartis GH' },
-  { id:'p5', name:'Malaria Test Kit', sku:'MAL-TEST', category:'Devices', price:25, cost:16, stock:7, barcode:'890127', color:'violet', brand:'SD Bioline', supplier:'Lab Supplies Ltd' },
-  { id:'p6', name:'ORS Sachet', sku:'ORS-SACH', category:'First Aid', price:6, cost:3.5, stock:33, barcode:'890128', color:'blue', brand:'Cerlyte', supplier:'Uniliver Ghana' },
-  { id:'p7', name:'Vitamin C 1000mg', sku:'VITC-1000', category:'Vitamins', price:45, cost:32, stock:51, barcode:'890129', color:'mint', brand:'60 tablets', supplier:'Vita Health' },
-  { id:'p8', name:'Digital Thermometer', sku:'THERM-D', category:'Devices', price:42, cost:26, stock:22, barcode:'890130', color:'violet', brand:'CarePlus', supplier:'Lab Supplies Ltd' },
-  { id:'p9', name:'Cough Syrup 100ml', sku:'COUGH-100', category:'Cough & Cold', price:22, cost:14, stock:48, barcode:'890131', color:'mint', brand:'Cofex', supplier:'M&G Pharma' },
-  { id:'p10', name:'Baby Diapers Size 3', sku:'DIAP-3', category:'Baby & Mother', price:65, cost:48, stock:3, barcode:'890132', color:'peach', brand:'Pampers Care', supplier:'Uniliver Ghana' },
-  { id:'p11', name:'Antiseptic Cream 30g', sku:'ANTIS-30', category:'Personal Care', price:24, cost:16, stock:60, barcode:'890133', color:'blue', brand:'Savlon', supplier:'Ernest Chemists' },
-  { id:'p12', name:'First Aid Kit Basic', sku:'AID-KIT', category:'First Aid', price:95, cost:70, stock:15, barcode:'890134', color:'mint', brand:'MediKit', supplier:'Lab Supplies Ltd' },
-];
-
-const starterCustomers = [
-  { id:'c1', name:'Walk-in customer', phone:'', email:'', address:'', balance:0, totalSpent:0, visits:0, isWalkIn:true },
-  { id:'c2', name:'Akosua Boateng', phone:'0244123456', email:'akosua@example.com', address:'East Legon, Accra', balance:120, totalSpent:1250, visits:18 },
-  { id:'c3', name:'Kwame Asare', phone:'0207654321', email:'kwame@example.com', address:'Spintex, Accra', balance:0, totalSpent:890, visits:12 },
-  { id:'c4', name:'Ama Serwaa', phone:'0551234567', email:'ama@example.com', address:'Tema', balance:250, totalSpent:2100, visits:24 },
-  { id:'c5', name:'Joseph Mensah', phone:'0249988776', email:'joseph@example.com', address:'Madina, Accra', balance:45.5, totalSpent:560, visits:8 },
-];
-
-const starterEmployees = [
-  { id:'e1', name:'Abena Mensah', role:'owner', phone:'0244000001', email:'owner@shop.com', shift:'08:00-17:00', status:'On shift', salary:0, initials:'AM' },
-  { id:'e2', name:'Ama Boateng', role:'cashier', phone:'0244000002', email:'ama@shop.com', shift:'08:00-16:00', status:'On shift', salary:1800, initials:'AB' },
-  { id:'e3', name:'Kwame Owusu', role:'cashier', phone:'0244000003', email:'kwame@shop.com', shift:'09:00-17:00', status:'On shift', salary:1700, initials:'KO' },
-];
-
-const starterGiftCards = [
-  { id:'g1', code:'GIFT-100-001', balance:100, original:100, customerId:'c2', customerName:'Akosua Boateng', expiry:'2026-12-31', status:'active' },
-  { id:'g2', code:'GIFT-50-002', balance:25.5, original:50, customerId:'c4', customerName:'Ama Serwaa', expiry:'2026-11-30', status:'active' },
-  { id:'g3', code:'GIFT-200-003', balance:200, original:200, customerId:'', customerName:'', expiry:'2027-01-15', status:'active' },
-];
-
-const starterSales = [
-  { id:'POS-02487', invoiceNumber:'INV-02487', date:todayKey(), time:'10:42', cashier:'Ama Boateng', cashierId:'e2', customerId:'c1', customerName:'Walk-in customer', items:[{productId:'p1',name:'Paracetamol 500mg',qty:1,unitPrice:12.5,lineTotal:12.5},{productId:'p7',name:'Vitamin C 1000mg',qty:2,unitPrice:45,lineTotal:90}], subtotal:102.5, discount:0, tax:0, total:102.5, payment:'Cash', paymentDetail:{}, itemCount:3, status:'paid' },
-  { id:'POS-02486', invoiceNumber:'INV-02486', date:todayKey(), time:'10:31', cashier:'Kwame Owusu', cashierId:'e3', customerId:'c2', customerName:'Akosua Boateng', items:[{productId:'p2',name:'Ibuprofen 400mg',qty:2,unitPrice:18,lineTotal:36},{productId:'p8',name:'Digital Thermometer',qty:1,unitPrice:42,lineTotal:42}], subtotal:78, discount:0, tax:0, total:78, payment:'MoMo', paymentDetail:{phone:'0244123456', txn:'MOMO-123456'}, itemCount:3, status:'paid' },
-  { id:'POS-02485', invoiceNumber:'INV-02485', date:todayKey(), time:'09:55', cashier:'Ama Boateng', cashierId:'e2', customerId:'c4', customerName:'Ama Serwaa', items:[{productId:'p3',name:'Amoxicillin 500mg',qty:1,unitPrice:35,lineTotal:35}], subtotal:35, discount:3.5, tax:0, total:31.5, payment:'Cash', paymentDetail:{}, itemCount:1, status:'paid' },
-  { id:'POS-02484', invoiceNumber:'INV-02484', date:todayKey(), time:'09:18', cashier:'Kwame Owusu', cashierId:'e3', customerId:'c3', customerName:'Kwame Asare', items:[{productId:'p9',name:'Cough Syrup 100ml',qty:1,unitPrice:22,lineTotal:22}], subtotal:22, discount:0, tax:0, total:22, payment:'Gift', paymentDetail:{code:'GIFT-50-002', used:22}, itemCount:1, status:'paid' },
-];
-
-const starterMessages = [
-  { id:'m1', from:'Abena Mensah', fromId:'e1', to:'all', toName:'All Staff', subject:'Morning briefing', body:'Please ensure shelves are restocked before 9am. New drug shipment arrived. Check expiry dates on all packs.', date:todayKey(), time:'08:15', readBy:[] },
-  { id:'m2', from:'Abena Mensah', fromId:'e1', to:'e2', toName:'Ama Boateng', subject:'Customer follow-up', body:'Akosua Boateng has a pending balance of GH\u20b5120. Please remind her on next visit.', date:todayKey(), time:'09:00', readBy:[] },
-];
-
-const starterExpenses = [
-  { id:'x1', date:daysAgo(0), category:'Utilities', amount:180, payment:'Cash', note:'Electricity top-up (ECG)', by:'Abena Mensah' },
-  { id:'x2', date:daysAgo(1), category:'Transport', amount:65, payment:'Cash', note:'Drug delivery to shop', by:'Ama Boateng' },
-  { id:'x3', date:daysAgo(2), category:'Supplies', amount:240, payment:'MoMo', note:'Receipt rolls & carrier bags', by:'Abena Mensah' },
-  { id:'x4', date:daysAgo(3), category:'Maintenance', amount:320, payment:'Cash', note:'Fridge servicing', by:'Abena Mensah' },
-  { id:'x5', date:daysAgo(5), category:'Marketing', amount:150, payment:'MoMo', note:'Local radio promo', by:'Abena Mensah' },
-  { id:'x6', date:daysAgo(6), category:'Rent', amount:1500, payment:'Cash', note:'Monthly shop rent', by:'Abena Mensah' },
-];
-
-const starterStockMoves = [
-  { id:'sm1', productId:'p1', productName:'Paracetamol 500mg', type:'restock', qty:20, date:daysAgo(2), time:'09:15', by:'Abena Mensah', note:'Ernest Chemists delivery' },
-  { id:'sm2', productId:'p5', productName:'Malaria Test Kit', type:'adjustment', qty:-2, date:daysAgo(1), time:'16:40', by:'Ama Boateng', note:'Damaged kits' },
-  { id:'sm3', productId:'p11', productName:'Antiseptic Cream 30g', type:'restock', qty:24, date:daysAgo(1), time:'11:05', by:'Abena Mensah', note:'Ernest Chemists delivery' },
-];
-
-const starterAttendance = [
-  { id:'at1', employeeId:'e1', name:'Abena Mensah', date:todayKey(), in:'07:45', out:null, hours:null },
-  { id:'at2', employeeId:'e2', name:'Ama Boateng', date:todayKey(), in:'07:58', out:null, hours:null },
-];
-
-function usePersistent(key, initial){
-  const [val,setVal]=useState(()=>{
-    try{ const s=localStorage.getItem(key); return s?JSON.parse(s):initial }catch{ return initial }
-  });
-  useEffect(()=>{ try{ localStorage.setItem(key, JSON.stringify(val)) }catch{} },[key,val]);
-  return [val,setVal];
-}
-
 function App(){
-  const [products,setProducts]=usePersistent(K.products, starterProducts);
-  const [sales,setSales]=usePersistent(K.sales, starterSales);
-  const [customers,setCustomers]=usePersistent(K.customers, starterCustomers);
-  const [employees,setEmployees]=usePersistent(K.employees, starterEmployees);
-  const [giftCards,setGiftCards]=usePersistent(K.giftCards, starterGiftCards);
-  const [messages,setMessages]=usePersistent(K.messages, starterMessages);
-  const [activities,setActivities]=usePersistent(K.activities, [
-    {id:'a1',type:'sale',title:'Ama Boateng completed a sale',detail:'GH₵ 109 · Cash',time:'10:42'},
-    {id:'a2',type:'sale',title:'Kwame Owusu completed a sale',detail:'GH₵ 74 · MoMo',time:'10:31'},
-  ]);
-  const [attendance,setAttendance]=usePersistent(K.attendance, starterAttendance);
-  const [expenses,setExpenses]=usePersistent(K.expenses, starterExpenses);
-  const [stockMoves,setStockMoves]=usePersistent(K.stockMoves, starterStockMoves);
+  const {
+    products, sales, customers, employees, giftCards, messages, activities,
+    attendance, expenses, stockMoves, sync, actions,
+  } = usePosiData();
 
   const [role,setRole]=useState(()=>{ try{ return sessionStorage.getItem('pos-role')||null }catch{return null}});
   const [cashierId,setCashierId]=useState(()=>{ try{ return sessionStorage.getItem('pos-cashier')||'e2' }catch{return 'e2'}});
   const [view,setView]=useState(()=> role==='owner'?'dashboard':'pos');
   const [toast,setToast]=useState('');
   const [success,setSuccess]=useState(null);
-  const [online,setOnline]=useState(typeof navigator!=='undefined'?navigator.onLine:true);
 
   // POS state
   const [search,setSearch]=useState('');
@@ -192,11 +95,13 @@ function App(){
   const currentUser = role==='owner' ? employees.find(e=>e.role==='owner') : currentEmployee;
   const isOwner = role==='owner';
 
+  // Keep the POS customer selection valid as the shared customer list changes.
   useEffect(()=>{
-    const on=()=>setOnline(navigator.onLine);
-    window.addEventListener('online',on); window.addEventListener('offline',on);
-    return ()=>{window.removeEventListener('online',on);window.removeEventListener('offline',on)}
-  },[]);
+    if(!customers.length) return;
+    if(customers.some(c=>c.id===selectedCustomerId)) return;
+    setSelectedCustomerId((customers.find(c=>c.isWalkIn) || customers[0]).id);
+  },[customers, selectedCustomerId]);
+
   useEffect(()=>{ if(toast){ const t=setTimeout(()=>setToast(''),2800); return ()=>clearTimeout(t)} },[toast]);
   useEffect(()=>{ if(success){ const t=setTimeout(()=>setSuccess(null),6000); return ()=>clearTimeout(t)} },[success]);
 
@@ -211,7 +116,9 @@ function App(){
     setRole(null); setCart([]); setView('dashboard');
   };
 
-  const addActivity = (a)=> setActivities(p=>[{id:uid('act'),...a,time:shortTime()},...p].slice(0,40));
+  // Offline-first writes are applied locally first; when the API cannot be
+  // reached the change is queued and replayed automatically.
+  const syncNote = (result) => (result?.queued ? ' · saved on this device, syncing soon' : '');
 
   // Low stock alerts
   const lowStockItems = useMemo(()=> products
@@ -219,135 +126,108 @@ function App(){
     .sort((a,b)=>a.stock-b.stock),[products]);
 
   // Stock movements
-  const logStockMove = (product, type, qty, note)=> {
-    setStockMoves(sm=>[{id:uid('sm'),productId:product.id,productName:product.name,type,qty,date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:note||''},...sm].slice(0,300));
-  };
-
-  const applyStockChange = ({product, mode, qty, note, cost})=>{
+  const applyStockChange = async ({product, mode, qty, note, cost})=>{
     if(!isOwner){ flash('Only the owner can manage stock'); return }
     const amount = Math.floor(Number(qty));
     if(!product || !amount){ flash('Enter a quantity'); return }
     const delta = mode==='restock' ? Math.abs(amount) : -Math.abs(amount);
-    setProducts(prev=>prev.map(p=>{
-      if(p.id!==product.id) return p;
-      return {...p, stock: Math.max(0, p.stock + delta), ...(cost!==undefined && cost!=='' ? {cost:Number(cost)} : {})};
-    }));
-    logStockMove(product, mode, delta, note);
-    addActivity({type:'stock',title:`${currentUser?.name} ${mode==='restock'?'restocked':'adjusted'} ${product.name}`,detail:`${delta>0?'+':''}${delta} units${note?` · ${note}`:''}`});
-    flash(mode==='restock' ? `${product.name} restocked (+${delta})` : `${product.name} adjusted (${delta})`);
     setStockModal(null);
+    const result = await actions.adjustStock({product, mode, qty:amount, note, cost, by:currentUser?.name||'Staff', moveId:uid('sm')});
+    if(!result.ok){ flash(`Stock not updated: ${result.error?.message||'server rejected the change'}`); return }
+    flash((mode==='restock' ? `${product.name} restocked (+${delta})` : `${product.name} adjusted (${delta})`) + syncNote(result));
   };
 
   // Expenses
-  const saveExpense = (exp)=>{
-    if(editingExpense){
-      setExpenses(es=>es.map(e=>e.id===exp.id?exp:e));
-      flash('Expense updated');
-    }else{
-      setExpenses(es=>[exp,...es]);
-      flash('Expense recorded');
-    }
-    addActivity({type:'expense',title:`${currentUser?.name} recorded expense`,detail:`${format(exp.amount)} · ${exp.category}`});
+  const saveExpense = async (exp)=>{
+    const editing = Boolean(editingExpense);
     setShowExpenseModal(false); setEditingExpense(null);
+    const result = await actions.saveExpense(exp,{editing});
+    if(!result.ok){ flash(`Expense not saved: ${result.error?.message||'server rejected the change'}`); return }
+    flash((editing ? 'Expense updated' : 'Expense recorded') + syncNote(result));
   };
-  const deleteExpense = (id)=>{
+  const deleteExpense = async (id)=>{
     if(!isOwner){ flash('Only owner can delete expenses'); return }
-    setExpenses(es=>es.filter(e=>e.id!==id));
-    flash('Expense deleted');
+    const result = await actions.deleteExpense(id);
+    if(!result.ok){ flash(`Expense not deleted: ${result.error?.message||'server rejected the change'}`); return }
+    flash('Expense deleted' + syncNote(result));
   };
 
   // Staff attendance (clock in / out)
   const todayAttendance = attendance.find(a=>a.employeeId===currentUser?.id && a.date===todayKey());
-  const toggleClock = ()=>{
+  const toggleClock = async ()=>{
     if(!todayAttendance){
-      setAttendance(at=>[{id:uid('at'),employeeId:currentUser.id,name:currentUser.name,date:todayKey(),in:shortTime(),out:null,hours:null},...at]);
-      addActivity({type:'staff',title:`${currentUser.name} clocked in`,detail:shortTime()});
-      flash(`Clocked in at ${shortTime()}`);
+      const entry = {id:uid('at'),employeeId:currentUser.id,name:currentUser.name,date:todayKey(),in:shortTime(),out:null,hours:null};
+      const result = await actions.saveAttendance(entry);
+      if(!result.ok){ flash(`Clock in failed: ${result.error?.message||'server rejected the change'}`); return }
+      flash(`Clocked in at ${entry.in}` + syncNote(result));
     }else if(!todayAttendance.out){
       const out = shortTime();
       const hours = hoursBetween(todayAttendance.date, todayAttendance.in, out);
-      setAttendance(at=>at.map(a=>a.id===todayAttendance.id?{...a,out,hours}:a));
-      addActivity({type:'staff',title:`${currentUser.name} clocked out`,detail:`${hours??0} hours today`});
-      flash(`Clocked out · ${hours??0} hours today`);
+      const result = await actions.saveAttendance({...todayAttendance,out,hours});
+      if(!result.ok){ flash(`Clock out failed: ${result.error?.message||'server rejected the change'}`); return }
+      flash(`Clocked out · ${hours??0} hours today` + syncNote(result));
     }else{
       flash('Already clocked out for today');
     }
   };
 
   // Products
-  const saveProduct = (prod)=>{
+  const saveProduct = async (prod)=>{
     if(!isOwner){ flash('Only the owner can manage product records'); return }
-    if(editingProduct){
-      const prevStock = editingProduct.stock||0;
-      setProducts(p=>p.map(x=>x.id===prod.id?prod:x));
-      if(prod.stock!==prevStock) logStockMove(prod,'adjustment',prod.stock-prevStock,'Edited in product record');
-      addActivity({type:'product',title:`${currentUser?.name} updated product`,detail:prod.name});
-      flash(`${prod.name} updated`);
-    }else{
-      setProducts(p=>[prod,...p]);
-      if(prod.stock>0) logStockMove(prod,'restock',prod.stock,'Opening stock');
-      addActivity({type:'product',title:`${currentUser?.name} added product`,detail:`${prod.name} · ${prod.stock} units`});
-      flash(`${prod.name} added to inventory`);
-    }
+    const editing = Boolean(editingProduct);
     setShowProductModal(false); setEditingProduct(null);
+    const result = await actions.saveProduct(prod,{editing, actor: currentUser?.name});
+    if(!result.ok){ flash(`Product not saved: ${result.error?.message||'server rejected the change'}`); return }
+    flash((editing ? `${prod.name} updated` : `${prod.name} added to inventory`) + syncNote(result));
   };
-  const deleteProduct = (id)=>{
+  const deleteProduct = async (id)=>{
     if(!isOwner){ flash('Only owner can delete products'); return }
-    setProducts(p=>p.filter(x=>x.id!==id));
-    flash('Product removed');
+    const result = await actions.deleteProduct(id);
+    if(!result.ok){ flash(`Product not removed: ${result.error?.message||'server rejected the change'}`); return }
+    flash('Product removed' + syncNote(result));
   };
 
   // Customers
-  const saveCustomer = (cust)=>{
-    if(editingCustomer){
-      setCustomers(cs=>cs.map(c=>c.id===cust.id?cust:c));
-      flash(`${cust.name} updated`);
-    }else{
-      setCustomers(cs=>[cust,...cs]);
-      flash(`${cust.name} added`);
-    }
+  const saveCustomer = async (cust)=>{
+    const editing = Boolean(editingCustomer);
     setShowCustomerModal(false); setEditingCustomer(null);
+    const result = await actions.saveCustomer(cust,{editing});
+    if(!result.ok){ flash(`Customer not saved: ${result.error?.message||'server rejected the change'}`); return }
+    flash((editing ? `${cust.name} updated` : `${cust.name} added`) + syncNote(result));
   };
-  const payAccount = (customerId, amount)=>{
-    setCustomers(cs=>cs.map(c=>{
-      if(c.id!==customerId) return c;
-      return {...c,balance:Math.max(0, Number(c.balance)-Number(amount))};
-    }));
-    addActivity({type:'account',title:`Customer payment received`,detail:`${format(amount)} · ${customers.find(c=>c.id===customerId)?.name}`});
-    flash(`Payment of ${format(amount)} recorded`);
+  const payAccount = async (customerId, amount)=>{
+    const result = await actions.payAccount(customerId, amount, currentUser?.name||'Staff');
+    if(!result.ok){ flash(`Payment not recorded: ${result.error?.message||'server rejected the change'}`); return }
+    flash(`Payment of ${format(amount)} recorded` + syncNote(result));
   };
 
   // Employees
-  const saveEmployee = (emp)=>{
-    if(editingEmployee){
-      setEmployees(es=>es.map(e=>e.id===emp.id?emp:e));
-      flash(`${emp.name} updated`);
-    }else{
-      setEmployees(es=>[emp,...es]);
-      flash(`${emp.name} added as ${emp.role}`);
-    }
+  const saveEmployee = async (emp)=>{
+    const editing = Boolean(editingEmployee);
     setShowEmployeeModal(false); setEditingEmployee(null);
+    const result = await actions.saveEmployee(emp,{editing});
+    if(!result.ok){ flash(`Staff account not saved: ${result.error?.message||'server rejected the change'}`); return }
+    flash((editing ? `${emp.name} updated` : `${emp.name} added as ${emp.role}`) + syncNote(result));
   };
 
   // Gift Cards
-  const saveGiftCard = (gc)=>{
-    setGiftCards(gs=>[gc,...gs]);
-    flash(`Gift card ${gc.code} created with ${format(gc.balance)}`);
+  const saveGiftCard = async (gc)=>{
     setShowGiftModal(false);
+    const result = await actions.createGiftCard(gc);
+    if(!result.ok){ flash(`Gift card not created: ${result.error?.message||'server rejected the change'}`); return }
+    flash(`Gift card ${gc.code} created with ${format(gc.balance)}` + syncNote(result));
   };
 
   // Messages
-  const sendMessage = (msg)=>{
-    setMessages(m=>[msg,...m]);
-    flash(`Message sent to ${msg.toName}`);
+  const sendMessage = async (msg)=>{
     setShowMessageModal(false);
+    const result = await actions.sendMessage(msg);
+    if(!result.ok){ flash(`Message not sent: ${result.error?.message||'server rejected the change'}`); return }
+    flash(`Message sent to ${msg.toName}` + syncNote(result));
   };
   const markRead = (msgId, empId)=>{
-    setMessages(ms=>ms.map(m=>{
-      if(m.id!==msgId) return m;
-      if(m.readBy?.includes(empId)) return m;
-      return {...m,readBy:[...(m.readBy||[]),empId]};
-    }));
+    if(messages.find(m=>m.id===msgId)?.readBy?.includes(empId)) return;
+    actions.markRead(msgId, empId);
   };
 
   // POS logic
@@ -388,7 +268,7 @@ function App(){
   const itemCount = cart.reduce((s,i)=>s+i.qty,0);
   const selectedCustomer = customers.find(c=>c.id===selectedCustomerId) || customers[0];
 
-  const completeSale = (payment, detail)=>{
+  const completeSale = async (payment, detail)=>{
     if(!cart.length) return;
     if(payment==='Gift'){
       const gc = giftCards.find(g=>g.code===detail.code && g.status==='active');
@@ -403,9 +283,9 @@ function App(){
       date:todayKey(), time:shortTime(),
       cashier: currentUser?.name || 'Cashier',
       cashierId: currentUser?.id || cashierId,
-      customerId: selectedCustomer.id,
-      customerName: selectedCustomer.name,
-      items: cart.map(i=>({productId:i.id,name:i.name,qty:i.qty,unitPrice:i.price,lineTotal:i.price*i.qty})),
+      customerId: selectedCustomer?.id || '',
+      customerName: selectedCustomer?.name || 'Walk-in customer',
+      items: cart.map(i=>({productId:i.id,name:i.name,qty:i.qty,unitPrice:i.price,lineTotal:Number((i.price*i.qty).toFixed(2))})),
       subtotal: Number(subtotal.toFixed(2)),
       discount: Number(discount.toFixed(2)),
       tax:0,
@@ -414,37 +294,22 @@ function App(){
       itemCount, status:'paid'
     };
 
-    // update products stock + log movements + watch for low stock
-    setProducts(prev=>prev.map(p=>{
-      const sold = cart.find(c=>c.id===p.id);
-      if(!sold) return p;
-      return {...p, stock: Math.max(0, p.stock - sold.qty)};
-    }));
-    const soldMoves = cart.map(i=>({id:uid('sm'),productId:i.id,productName:i.name,type:'sale',qty:-i.qty,date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:saleId}));
-    setStockMoves(sm=>[...soldMoves,...sm].slice(0,300));
     const lowNow = cart.filter(i=>{
       const prod = products.find(p=>p.id===i.id);
       return prod && (prod.stock - i.qty) <= reorderOf(prod);
     }).map(i=>i.name);
 
-    // update customer spent for non walk-in
-    if(!selectedCustomer.isWalkIn){
-      setCustomers(cs=>cs.map(c=> c.id===selectedCustomer.id ? {...c,totalSpent:Number(c.totalSpent)+Number(total),visits:(c.visits||0)+1} : c));
-    }
-
-    // handle gift card deduction
-    if(payment==='Gift'){
-      setGiftCards(gs=>gs.map(g=>{
-        if(g.code!==detail.code) return g;
-        const newBal = Number(g.balance)-Number(total);
-        return {...g, balance: Math.max(0,newBal), status: newBal<=0.01?'used':'active'};
-      }));
-    }
-
-    setSales(prev=>[sale,...prev]);
-    addActivity({type:'sale',title:`${sale.cashier} completed a sale`,detail:`${format(total)} · ${payment}`});
+    // Clear the till straight away; the sale is applied locally and pushed to
+    // the API, or queued for later if the server is unreachable.
     setCart([]); setDiscountOn(false); setShowPay(false); setMobileCart(false);
     setSuccess(sale);
+    const result = await actions.completeSale(sale);
+    if(!result.ok){
+      setSuccess(null);
+      flash(`Sale not saved: ${result.error?.message||'server rejected the sale'}`);
+      return;
+    }
+    if(result.queued) flash('Offline — sale saved on this device and will sync automatically');
     if(isOwner && lowNow.length){ setTimeout(()=>flash(`Low stock alert: ${lowNow.join(', ')} — restock soon`), 400); }
   };
 
@@ -490,7 +355,14 @@ function App(){
   ];
   const nav = isOwner?navOwner:navCashier;
 
-  if(!role) return <LoginScreen employees={employees} onSignIn={signIn} />;
+  if(sync.status==='loading') return <BootScreen sync={sync}/>;
+  if(sync.status==='error') return <BootScreen sync={sync} error={sync.error}/>;
+  if(!employees.length){
+    return <BootScreen sync={sync} empty message={sync.status==='ready'
+      ? 'The database is connected but has no staff accounts yet. Run “npm run seed” in the backend folder, or create an owner account.'
+      : undefined}/>;
+  }
+  if(!role) return <LoginScreen employees={employees} onSignIn={signIn} sync={sync}/>;
 
   return (
     <div className="app-shell">
@@ -534,7 +406,7 @@ function App(){
         <header className="topbar">
           <div className="breadcrumb"><span>Green Cross</span><span>›</span><b>{nav.find(n=>n.id===view)?.label||view}</b></div>
           <div className="top-actions">
-            <span className={`chip ${online?'online':'offline'}`}><i/> {online?'Online':'Offline'}</span>
+            <SyncChip sync={sync}/>
             <span className="today"><Clock3 size={14}/>{fullDate()}</span>
             <button className={`btn small ${todayAttendance && !todayAttendance.out?'primary':'ghost'}`} onClick={toggleClock} title="Staff clock in / out">
               <AlarmClock size={14}/><span className="clock-text">{todayAttendance ? (todayAttendance.out?`Out ${todayAttendance.out}`:`In ${todayAttendance.in}`) : 'Clock in'}</span>
@@ -566,6 +438,7 @@ function App(){
           </div>
         </header>
 
+        <SyncBanner sync={sync}/>
         <div className="page">
           {view==='dashboard' && isOwner && <DashboardOwner sales={sales} todaySales={todaySales} products={products} customers={customers} employees={employees} activities={activities} messages={messages} giftCards={giftCards} expenses={expenses} setView={setView} onRestock={(p)=>setStockModal({product:p,mode:'restock'})} />}
           {view==='pos' && <POSPage
@@ -577,7 +450,7 @@ function App(){
             completeSale={completeSale} giftCards={giftCards} isOwner={isOwner}
             onAddProduct={()=>{setEditingProduct(null);setShowProductModal(true)}}
           />}
-          {view==='inventory' && <InventoryPage products={products} setProducts={setProducts} search={search} setSearch={setSearch} cat={cat} setCat={setCat} categories={categories} isOwner={isOwner} stockMoves={stockMoves} onEdit={(p)=>{setEditingProduct(p);setShowProductModal(true)}} onDelete={deleteProduct} onAdd={()=>{setEditingProduct(null);setShowProductModal(true)}} onStock={(p,mode)=>setStockModal({product:p,mode})} />}
+          {view==='inventory' && <InventoryPage products={products} search={search} setSearch={setSearch} cat={cat} setCat={setCat} categories={categories} isOwner={isOwner} stockMoves={stockMoves} onEdit={(p)=>{setEditingProduct(p);setShowProductModal(true)}} onDelete={deleteProduct} onAdd={()=>{setEditingProduct(null);setShowProductModal(true)}} onStock={(p,mode)=>setStockModal({product:p,mode})} />}
           {view==='customers' && <CustomersPage customers={customers} sales={sales} isOwner={isOwner} onEdit={(c)=>{setEditingCustomer(c);setShowCustomerModal(true)}} onAdd={()=>{setEditingCustomer(null);setShowCustomerModal(true)}} onPayAccount={payAccount} />}
           {view==='invoices' && <InvoicesPage sales={visibleSales} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} employees={employees} />}
           {view==='expenses' && isOwner && <ExpensesPage expenses={expenses} onEdit={(e)=>{setEditingExpense(e);setShowExpenseModal(true)}} onAdd={()=>{setEditingExpense(null);setShowExpenseModal(true)}} onDelete={deleteExpense} />}
@@ -615,9 +488,58 @@ function App(){
 
 // Components
 
-function LoginScreen({employees,onSignIn}){
+// Sync + boot chrome ---------------------------------------------------------
+
+function SyncChip({sync}){
+  const { status, syncing, pending, lastSyncedAt } = sync;
+  if(syncing) return <span className="chip syncing" title="Talking to the POSI server"><i/> Syncing…</span>;
+  if(status==='ready'){
+    const time = lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString('en-GH',{hour:'2-digit',minute:'2-digit',hour12:false}) : null;
+    return <span className={`chip ${pending?'offline':'online'}`} title={time?`Last synced at ${time}`:'Connected to the POSI server'}><i/> {pending?`${pending} queued`:'Synced'}</span>;
+  }
+  if(status==='error') return <span className="chip offline" title={sync.error||''}><WifiOff size={12}/> No server</span>;
+  return <span className="chip offline" title={sync.error||''}><i/> {pending?`Offline · ${pending} queued`:'Offline'}</span>;
+}
+
+function SyncBanner({sync}){
+  const offline = sync.status!=='ready';
+  if(sync.issue){
+    return <div className="sync-banner error"><CloudOff size={15}/><span><b>Sync problem.</b> {sync.issue}</span><button className="btn small" onClick={sync.retry}><RefreshCw size={12}/> Retry</button><button className="btn icon small" onClick={sync.dismissIssue}><X size={12}/></button></div>;
+  }
+  if(sync.pending){
+    return <div className="sync-banner warn"><Cloud size={15}/><span><b>{sync.pending} change{sync.pending===1?'':'s'} waiting to sync.</b> Saved on this device — will upload when the server is reachable.</span><button className="btn small" onClick={sync.retry} disabled={sync.syncing}><RefreshCw size={12}/>{sync.syncing?'Syncing…':'Sync now'}</button></div>;
+  }
+  if(offline){
+    return <div className="sync-banner"><WifiOff size={15}/><span><b>Working offline.</b> Showing the last data saved on this device{sync.error?` · ${sync.error}`:''}. Sales keep working and will sync when the connection returns.</span><button className="btn small" onClick={sync.refresh} disabled={sync.syncing}><RefreshCw size={12}/> Try again</button></div>;
+  }
+  return null;
+}
+
+function BootScreen({sync, error, empty=false, message}){
+  const failed = Boolean(error);
+  return (
+    <div className="boot">
+      <div className="boot-card">
+        <div className="brand-mark" style={{width:'44px',height:'44px',fontSize:'18px'}}>P</div>
+        <h1>{empty?'No staff accounts yet':failed?'Cannot reach the POSI server':'Connecting to the database'}</h1>
+        {empty
+          ? <p>{message||'The database is empty. Seed the demo datasets from the backend folder to get started.'}</p>
+          : failed
+            ? <p>{error}</p>
+            : <p>Loading products, sales, staff and reports.</p>}
+        {!empty && !failed && <div className="boot-progress"><Loader2 size={16} className="spin"/> Syncing…</div>}
+        {failed && <button className="btn primary" onClick={()=>sync.refresh()}><RefreshCw size={14}/> Try again</button>}
+        {failed && <small className="boot-note">Start the API with <code>npm run dev:api</code> (default http://localhost:8787) or set <code>VITE_API_BASE</code> to your deployed backend URL.</small>}
+        {empty && <small className="boot-note"><code>cd backend &amp;&amp; npm run seed</code></small>}
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({employees,onSignIn,sync}){
   const [role,setRole]=useState('owner');
   const [cashierId,setCashierId]=useState(employees.filter(e=>e.role==='cashier')[0]?.id||'e2');
+  const connected = sync?.status==='ready';
   return (
     <div className="login">
       <div className="login-left">
@@ -660,7 +582,7 @@ function LoginScreen({employees,onSignIn}){
           </button>
 
           <div style={{marginTop:'14px',padding:'10px',borderRadius:'8px',background:'#f6fbf8',display:'flex',gap:'8px',fontSize:'11px',color:'#4a635c'}}>
-            <ShieldCheck size={14} style={{flex:'none'}}/><span><b>Demo POS</b> — No password. Data saves in this browser. Cash, MoMo &amp; Gift card payments all functional.</span>
+            <ShieldCheck size={14} style={{flex:'none'}}/><span><b>Demo POS</b> — No password. Sales and stock are stored in the shop's PostgreSQL database, so every device on the counter sees the same records. {connected?`Connected to the server${sync.lastSyncedAt?` · synced ${new Date(sync.lastSyncedAt).toLocaleTimeString('en-GH',{hour:'2-digit',minute:'2-digit',hour12:false})}`:''}`:'Working offline from this device\u2019s saved data'}.</span>
           </div>
         </div>
       </div>
@@ -1524,7 +1446,7 @@ function EmployeeModal({employee,onClose,onSave}){
       <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#ede9fe',color:'#5b21b6',display:'grid',placeItems:'center'}}><UserCircle size={18}/></div><div><h3>{employee?'Edit staff account':'Create staff account'}</h3><p>Only the owner can create employee accounts</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
         <form onSubmit={submit}><div className="modal-body">
           <div className="field"><label>Name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} required/></div>
-          <div className="two"><div className="field"><label>Role</label><select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}><option value="cashier">Cashier</option><option value="manager">Manager</option><option value="owner">Owner</option></select></div><div className="field"><label>Shift</label><input value={form.shift} onChange={e=>setForm(f=>({...f,shift:e.target.value}))}/></div></div>
+          <div className="two"><div className="field"><label>Role</label><select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}><option value="cashier">Cashier</option><option value="owner">Owner</option></select></div><div className="field"><label>Shift</label><input value={form.shift} onChange={e=>setForm(f=>({...f,shift:e.target.value}))}/></div></div>
           <div className="two"><div className="field"><label>Phone</label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div><div className="field"><label>Email</label><input value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))}/></div></div>
           <div className="two"><div className="field"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}><option>On shift</option><option>Off duty</option><option>On leave</option></select></div><div className="field"><label>Salary (GH₵)</label><input type="number" value={form.salary} onChange={e=>setForm(f=>({...f,salary:e.target.value}))}/></div></div>
         </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary"><Check size={14}/>{employee?'Save':'Create staff account'}</button></div></form>
