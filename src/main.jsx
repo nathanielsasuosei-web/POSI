@@ -6,7 +6,7 @@ import {
   Search, Plus, Minus, X, Check, LogOut, Store, Clock3, TrendingUp, AlertTriangle,
   ArrowRight, ChevronDown, Download, Printer, ShieldCheck, CalendarDays, UserRound,
   CheckCircle2, DollarSign, PiggyBank, Landmark, Mail, Send, Eye, Edit2, Trash2, UserPlus,
-  Bell, ClipboardList, History, Coins, AlarmClock, TrendingDown
+  Bell, ClipboardList, History, Coins, AlarmClock, TrendingDown, KeyRound, Lock, EyeOff
 } from 'lucide-react';
 import './style.css';
 import { useOfflineSupport, OfflineBanner, OfflineChip } from './offline.jsx';
@@ -88,10 +88,39 @@ const starterCustomers = [
   { id:'c5', name:'Joseph Mensah', phone:'0249988776', email:'joseph@example.com', address:'Madina, Accra', balance:45.5, totalSpent:560, visits:8 },
 ];
 
+// Sign-in credentials. Passwords are never stored in plain text — only a
+// salted SHA-256 hash (see hashPassword). These starter logins exist so a
+// fresh install can be opened; the owner should change them after first sign-in.
+const DEFAULT_CREDENTIALS = {
+  e1: { username:'owner', password:'owner123' },
+  e2: { username:'ama', password:'ama123' },
+  e3: { username:'kwame', password:'kwame123' },
+};
+
+// SHA-256 via Web Crypto, with a deterministic fallback for contexts where
+// crypto.subtle is unavailable (non-secure origins). Local-first demo hashing:
+// a production deployment must verify passwords on a server (e.g. bcrypt/argon2).
+async function hashPassword(password){
+  const text = `posi-v1:${String(password)}`;
+  try{
+    if(globalThis.crypto?.subtle){
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+    }
+  }catch{}
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for(let i=0;i<text.length;i++){ const ch = text.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1>>>16), 2246822507) ^ Math.imul(h2 ^ (h2>>>13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2>>>16), 2246822507) ^ Math.imul(h1 ^ (h1>>>13), 3266489909);
+  return (h2>>>0).toString(16).padStart(8,'0') + (h1>>>0).toString(16).padStart(8,'0');
+}
+const normalizeUsername = (u) => String(u||'').trim().toLowerCase();
+const deriveUsername = (emp) => normalizeUsername(DEFAULT_CREDENTIALS[emp?.id]?.username || String(emp?.name||'user').trim().split(/\s+/)[0] || 'user');
+
 const starterEmployees = [
-  { id:'e1', name:'Abena Mensah', role:'owner', phone:'0244000001', email:'owner@shop.com', shift:'08:00-17:00', status:'On shift', salary:0, initials:'AM' },
-  { id:'e2', name:'Ama Boateng', role:'cashier', phone:'0244000002', email:'ama@shop.com', shift:'08:00-16:00', status:'On shift', salary:1800, initials:'AB' },
-  { id:'e3', name:'Kwame Owusu', role:'cashier', phone:'0244000003', email:'kwame@shop.com', shift:'09:00-17:00', status:'On shift', salary:1700, initials:'KO' },
+  { id:'e1', name:'Abena Mensah', role:'owner', phone:'0244000001', email:'owner@shop.com', shift:'08:00-17:00', status:'On shift', salary:0, initials:'AM', username:'owner' },
+  { id:'e2', name:'Ama Boateng', role:'cashier', phone:'0244000002', email:'ama@shop.com', shift:'08:00-16:00', status:'On shift', salary:1800, initials:'AB', username:'ama' },
+  { id:'e3', name:'Kwame Owusu', role:'cashier', phone:'0244000003', email:'kwame@shop.com', shift:'09:00-17:00', status:'On shift', salary:1700, initials:'KO', username:'kwame' },
 ];
 
 const starterGiftCards = [
@@ -155,9 +184,8 @@ function App({offline}){
   const [expenses,setExpenses]=usePersistent(K.expenses, starterExpenses);
   const [stockMoves,setStockMoves]=usePersistent(K.stockMoves, starterStockMoves);
 
-  const [role,setRole]=useState(()=>{ try{ return sessionStorage.getItem('pos-role')||null }catch{return null}});
-  const [cashierId,setCashierId]=useState(()=>{ try{ return sessionStorage.getItem('pos-cashier')||'e2' }catch{return 'e2'}});
-  const [view,setView]=useState(()=> role==='owner'?'dashboard':'pos');
+  const [userId,setUserId]=useState(()=>{ try{ return sessionStorage.getItem('pos-user-id')||null }catch{return null}});
+  const [view,setView]=useState('pos');
   const [toast,setToast]=useState('');
   const [success,setSuccess]=useState(null);
   const [online,setOnline]=useState(typeof navigator!=='undefined'?navigator.onLine:true);
@@ -187,11 +215,15 @@ function App({offline}){
   const [stockModal,setStockModal]=useState(null); // {product, mode:'restock'|'adjust'}
   const [alertsOpen,setAlertsOpen]=useState(false);
   const [staffSales,setStaffSales]=useState(null); // employee whose sales history is open
+  const [credentialsFor,setCredentialsFor]=useState(null); // employee whose login the owner is managing
+  const [showMyPassword,setShowMyPassword]=useState(false); // signed-in user changing their own password
+  const credentialsReady = useRef(false);
   const [filterSales,setFilterSales]=useState({search:'',payment:'All',date:'All',cashier:'All'});
 
-  const currentEmployee = employees.find(e=>e.id===cashierId) || employees.find(e=>e.role==='cashier') || employees[0];
-  const currentUser = role==='owner' ? employees.find(e=>e.role==='owner') : currentEmployee;
-  const isOwner = role==='owner';
+  const currentUser = employees.find(e=>e.id===userId) || null;
+  const cashierId = currentUser?.id;
+  const isOwner = currentUser?.role==='owner';
+  const role = currentUser ? (isOwner ? 'owner' : 'cashier') : null;
 
   useEffect(()=>{
     const on=()=>setOnline(navigator.onLine);
@@ -202,14 +234,72 @@ function App({offline}){
   useEffect(()=>{ if(success){ const t=setTimeout(()=>setSuccess(null),6000); return ()=>clearTimeout(t)} },[success]);
 
   const flash = (m)=>setToast(m);
+  const landedRef = useRef(false);
+  useEffect(()=>{
+    if(landedRef.current || !currentUser) return;
+    landedRef.current = true;
+    setView(currentUser.role==='owner' ? 'dashboard' : 'pos');
+  },[currentUser]);
 
-  const signIn = (r,cId)=>{
-    try{ sessionStorage.setItem('pos-role',r); sessionStorage.setItem('pos-cashier',cId||'e2') }catch{}
-    setRole(r); setCashierId(cId||'e2'); setView(r==='owner'?'dashboard':'pos');
+  // Older locally saved staff records have no username/passwordHash. Give them
+  // the documented starter credentials (owner: owner/owner123, staff: first
+  // name / first name + 123) so nobody is locked out by the upgrade.
+  useEffect(()=>{
+    if(credentialsReady.current) return;
+    if(!employees.some(e=>!e.username || !e.passwordHash)){ credentialsReady.current = true; return }
+    credentialsReady.current = true;
+    (async()=>{
+      const patched = await Promise.all(employees.map(async e=>{
+        if(e.username && e.passwordHash) return e;
+        const username = e.username || deriveUsername(e);
+        const fallback = DEFAULT_CREDENTIALS[e.id]?.password || `${username}123`;
+        return {...e, username, passwordHash: e.passwordHash || await hashPassword(fallback)};
+      }));
+      setEmployees(patched);
+    })();
+  },[employees,setEmployees]);
+
+  // Username + password sign-in. Only accounts the owner created (Staff
+  // Tracking) can sign in; there is no self-registration.
+  const signIn = async (username,password)=>{
+    const emp = employees.find(e=>normalizeUsername(e.username)===normalizeUsername(username));
+    if(!emp) return 'No account with that username. Ask the owner to create your account.';
+    if(!emp.passwordHash) return 'This account has no password yet. Ask the owner to set one.';
+    if(await hashPassword(password) !== emp.passwordHash) return 'Wrong password. Try again or ask the owner to reset it.';
+    try{ sessionStorage.setItem('pos-user-id',emp.id); sessionStorage.removeItem('pos-role'); sessionStorage.removeItem('pos-cashier') }catch{}
+    setUserId(emp.id); setView(emp.role==='owner'?'dashboard':'pos');
+    return null;
   };
   const signOut = ()=>{
-    try{ sessionStorage.removeItem('pos-role'); sessionStorage.removeItem('pos-cashier') }catch{}
-    setRole(null); setCart([]); setView('dashboard');
+    try{ sessionStorage.removeItem('pos-user-id'); sessionStorage.removeItem('pos-role'); sessionStorage.removeItem('pos-cashier') }catch{}
+    setUserId(null); setCart([]); setView('pos');
+  };
+
+  // Owner-only: change any employee's username and/or reset their password.
+  // Also used by the owner for their own account from Staff Tracking.
+  const saveCredentials = async (emp, {username,password})=>{
+    if(!isOwner) { flash('Only the owner can change usernames and passwords'); return false }
+    const uname = normalizeUsername(username);
+    if(!uname) { flash('Username is required'); return false }
+    if(employees.some(e=>e.id!==emp.id && normalizeUsername(e.username)===uname)){ flash(`Username “${uname}” is already used by another account`); return false }
+    const patch = { username: uname };
+    if(password) patch.passwordHash = await hashPassword(password);
+    setEmployees(es=>es.map(e=>e.id===emp.id?{...e,...patch}:e));
+    addActivity({type:'staff',title:`${currentUser?.name} updated login for ${emp.name}`,detail:password?'Username and password changed':'Username changed'});
+    flash(password ? `Login updated for ${emp.name} — new username and password saved` : `Username for ${emp.name} changed to ${uname}`);
+    setCredentialsFor(null);
+    return true;
+  };
+
+  // Any signed-in user changing their OWN password must prove the current one.
+  const changeMyPassword = async (currentPassword,newPassword)=>{
+    if(!currentUser?.passwordHash) return 'This account has no password yet. Ask the owner to set one.';
+    if(await hashPassword(currentPassword) !== currentUser.passwordHash) return 'Current password is wrong.';
+    const passwordHash = await hashPassword(newPassword);
+    setEmployees(es=>es.map(e=>e.id===currentUser.id?{...e,passwordHash}:e));
+    flash('Your password has been changed');
+    setShowMyPassword(false);
+    return null;
   };
 
   const addActivity = (a)=> setActivities(p=>[{id:uid('act'),...a,time:shortTime()},...p].slice(0,40));
@@ -318,14 +408,22 @@ function App({offline}){
     flash(`Payment of ${format(amount)} recorded`);
   };
 
-  // Employees
+  // Employees — accounts are created only by the owner (this whole page is
+  // owner-only, and we double-check here). Usernames must be unique.
   const saveEmployee = (emp)=>{
+    if(!isOwner){ flash('Only the owner can create or change staff accounts'); return }
+    const uname = normalizeUsername(emp.username);
+    if(!uname){ flash('Every account needs a username'); return }
+    if(employees.some(e=>e.id!==emp.id && normalizeUsername(e.username)===uname)){ flash(`Username “${uname}” is already used by another account`); return }
     if(editingEmployee){
-      setEmployees(es=>es.map(e=>e.id===emp.id?emp:e));
+      // Preserve the existing password unless the owner typed a new one.
+      const existing = employees.find(e=>e.id===emp.id);
+      setEmployees(es=>es.map(e=>e.id===emp.id?{...emp,username:uname,passwordHash:emp.passwordHash||existing?.passwordHash}:e));
       flash(`${emp.name} updated`);
     }else{
-      setEmployees(es=>[emp,...es]);
-      flash(`${emp.name} added as ${emp.role}`);
+      if(!emp.passwordHash){ flash('New accounts need a starting password'); return }
+      setEmployees(es=>[{...emp,username:uname},...es]);
+      flash(`${emp.name} added as ${emp.role} — they can now sign in as “${uname}”`);
     }
     setShowEmployeeModal(false); setEditingEmployee(null);
   };
@@ -491,7 +589,7 @@ function App({offline}){
   ];
   const nav = isOwner?navOwner:navCashier;
 
-  if(!role) return <LoginScreen employees={employees} onSignIn={signIn} />;
+  if(!currentUser) return <LoginScreen onSignIn={signIn} />;
 
   return (
     <div className="app-shell">
@@ -561,7 +659,8 @@ function App({offline}){
                 </div>
               </>}
             </div>}
-            <div className="user-menu"><div className={`avatar ${isOwner?'owner':'cashier'}`} style={{width:'28px',height:'28px',fontSize:'11px'}}>{currentUser?.initials||'U'}</div><span style={{fontSize:'12px',fontWeight:700,maxWidth:'110px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{currentUser?.name}</span></div>
+            <div className="user-menu"><div className={`avatar ${isOwner?'owner':'cashier'}`} style={{width:'28px',height:'28px',fontSize:'11px'}}>{currentUser?.initials||'U'}</div><span style={{fontSize:'12px',fontWeight:700,maxWidth:'110px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{currentUser?.name}{currentUser?.username?` · @${currentUser.username}`:''}</span></div>
+            <button className="logout" onClick={()=>setShowMyPassword(true)} title={isOwner?'Change your own password':'Change my password'}><KeyRound size={14}/> <span className="clock-text">Password</span></button>
             <button className="logout" onClick={signOut}><LogOut size={14}/> Sign out</button>
           </div>
         </header>
@@ -582,7 +681,7 @@ function App({offline}){
           {view==='invoices' && <InvoicesPage sales={visibleSales} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} employees={employees} />}
           {view==='expenses' && isOwner && <ExpensesPage expenses={expenses} onEdit={(e)=>{setEditingExpense(e);setShowExpenseModal(true)}} onAdd={()=>{setEditingExpense(null);setShowExpenseModal(true)}} onDelete={deleteExpense} />}
           {view==='gift' && isOwner && <GiftAccountPage giftCards={giftCards} customers={customers} sales={sales} onAdd={()=>setShowGiftModal(true)} onPayAccount={payAccount} />}
-          {view==='staff' && isOwner && <StaffPage employees={employees} sales={sales} attendance={attendance} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} onViewSales={setStaffSales} />}
+          {view==='staff' && isOwner && <StaffPage employees={employees} sales={sales} attendance={attendance} currentUser={currentUser} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} onViewSales={setStaffSales} onCredentials={setCredentialsFor} />}
           {view==='reports' && isOwner && <ReportsPage sales={sales} products={products} customers={customers} giftCards={giftCards} expenses={expenses} />}
           {view==='messages' && <MessagesPage messages={messages} employees={employees} currentUser={currentUser} isOwner={isOwner} onSend={()=>setShowMessageModal(true)} onMarkRead={markRead} />}
         </div>
@@ -598,7 +697,9 @@ function App({offline}){
       {/* Modals */}
       {showProductModal && <ProductModal product={editingProduct} categories={categories.filter(c=>c!=='All')} onClose={()=>{setShowProductModal(false);setEditingProduct(null)}} onSave={saveProduct} />}
       {showCustomerModal && <CustomerModal customer={editingCustomer} onClose={()=>{setShowCustomerModal(false);setEditingCustomer(null)}} onSave={saveCustomer} />}
-      {showEmployeeModal && <EmployeeModal employee={editingEmployee} onClose={()=>{setShowEmployeeModal(false);setEditingEmployee(null)}} onSave={saveEmployee} />}
+      {showEmployeeModal && <EmployeeModal employee={editingEmployee} employees={employees} onClose={()=>{setShowEmployeeModal(false);setEditingEmployee(null)}} onSave={saveEmployee} />}
+      {credentialsFor && <CredentialsModal employee={credentialsFor} employees={employees} onClose={()=>setCredentialsFor(null)} onSave={saveCredentials} />}
+      {showMyPassword && <ChangePasswordModal user={currentUser} onClose={()=>setShowMyPassword(false)} onSave={changeMyPassword} />}
       {showGiftModal && <GiftModal customers={customers} onClose={()=>setShowGiftModal(false)} onSave={saveGiftCard} />}
       {showMessageModal && <MessageModal employees={employees} currentUser={currentUser} onClose={()=>setShowMessageModal(false)} onSend={sendMessage} />}
       {showExpenseModal && <ExpenseModal expense={editingExpense} onClose={()=>{setShowExpenseModal(false);setEditingExpense(null)}} onSave={saveExpense} employees={employees} />}
@@ -615,9 +716,21 @@ function App({offline}){
 
 // Components
 
-function LoginScreen({employees,onSignIn}){
-  const [role,setRole]=useState('owner');
-  const [cashierId,setCashierId]=useState(employees.filter(e=>e.role==='cashier')[0]?.id||'e2');
+function LoginScreen({onSignIn}){
+  const [username,setUsername]=useState('');
+  const [password,setPassword]=useState('');
+  const [showPassword,setShowPassword]=useState(false);
+  const [err,setErr]=useState('');
+  const [busy,setBusy]=useState(false);
+  const submit = async (e)=>{
+    e.preventDefault();
+    if(busy) return;
+    if(!username.trim() || !password){ setErr('Enter your username and password.'); return }
+    setBusy(true); setErr('');
+    const error = await onSignIn(username.trim(), password);
+    setBusy(false);
+    if(error) setErr(error);
+  };
   return (
     <div className="login">
       <div className="login-left">
@@ -633,36 +746,33 @@ function LoginScreen({employees,onSignIn}){
         </div>
       </div>
       <div className="login-right">
-        <div className="login-card">
+        <form className="login-card" onSubmit={submit}>
           <span style={{fontSize:'10px',fontWeight:800,letterSpacing:'1px',color:'#0f766e'}}>GREEN CROSS DRUG STORE · ACCRA</span>
           <h2 style={{margin:'8px 0 4px',fontSize:'24px',fontWeight:900}}>Sign in to POSI</h2>
-          <p style={{margin:0,color:'#6b7d76',fontSize:'13px'}}>Choose workspace. Owner sees combined accounts.</p>
+          <p style={{margin:0,color:'#6b7d76',fontSize:'13px'}}>Use the username and password the owner created for you. Accounts cannot be self-registered.</p>
 
-          <div style={{display:'flex',flexDirection:'column',gap:'8px',margin:'20px 0'}}>
-            <button className={`btn ${role==='owner'?'primary':'ghost'}`} style={{justifyContent:'flex-start',minHeight:'64px'}} onClick={()=>setRole('owner')}>
-              <ShieldCheck size={20}/><span style={{textAlign:'left'}}><b>Owner workspace</b><small style={{display:'block',fontWeight:400,color:role==='owner'?'#a7f3d0':'#6b7d76'}}>Combined accounts, reports, employees, messages</small></span>{role==='owner'&&<Check size={16} style={{marginLeft:'auto'}}/>}
-            </button>
-            <button className={`btn ${role==='cashier'?'primary':'ghost'}`} style={{justifyContent:'flex-start',minHeight:'64px'}} onClick={()=>setRole('cashier')}>
-              <ShoppingCart size={20}/><span style={{textAlign:'left'}}><b>Cashier workspace</b><small style={{display:'block',fontWeight:400,color:role==='cashier'?'#a7f3d0':'#6b7d76'}}>Fast POS, customers, sales history</small></span>{role==='cashier'&&<Check size={16} style={{marginLeft:'auto'}}/>}
-            </button>
+          <div style={{display:'flex',flexDirection:'column',gap:'12px',marginTop:'20px'}}>
+            <div className="field"><label htmlFor="login-username">Username</label>
+              <input id="login-username" name="username" autoComplete="username" autoFocus placeholder="e.g. owner" value={username} onChange={e=>setUsername(e.target.value)} required/>
+            </div>
+            <div className="field"><label htmlFor="login-password">Password</label>
+              <div style={{display:'flex',gap:'6px'}}>
+                <input id="login-password" name="password" type={showPassword?'text':'password'} autoComplete="current-password" placeholder="Your password" value={password} onChange={e=>setPassword(e.target.value)} required style={{flex:1}}/>
+                <button type="button" className="btn icon" onClick={()=>setShowPassword(v=>!v)} title={showPassword?'Hide password':'Show password'} aria-label={showPassword?'Hide password':'Show password'}>{showPassword?<EyeOff size={16}/>:<Eye size={16}/>}</button>
+              </div>
+            </div>
           </div>
 
-          {role==='cashier' && (
-            <div className="field"><label>Select cashier account</label>
-              <select value={cashierId} onChange={e=>setCashierId(e.target.value)}>
-                {employees.filter(e=>e.role!=='owner').map(e=><option key={e.id} value={e.id}>{e.name} · {e.role}</option>)}
-              </select>
-            </div>
-          )}
+          {err && <div role="alert" style={{marginTop:'12px',padding:'10px',borderRadius:'8px',background:'#fef2f2',border:'1px solid #fecaca',color:'#991b1b',fontSize:'12px',display:'flex',gap:'8px'}}><Lock size={14} style={{flex:'none'}}/><span>{err}</span></div>}
 
-          <button className="btn primary" style={{width:'100%',marginTop:'16px',justifyContent:'space-between'}} onClick={()=>onSignIn(role,cashierId)}>
-            <span>Continue as {role}</span><ArrowRight size={18}/>
+          <button className="btn primary" style={{width:'100%',marginTop:'16px',justifyContent:'space-between'}} disabled={busy}>
+            <span>{busy?'Signing in…':'Sign in'}</span><ArrowRight size={18}/>
           </button>
 
-          <div style={{marginTop:'14px',padding:'10px',borderRadius:'8px',background:'#f6fbf8',display:'flex',gap:'8px',fontSize:'11px',color:'#4a635c'}}>
-            <ShieldCheck size={14} style={{flex:'none'}}/><span><b>Demo POS</b> — No password. Data saves in this browser. Cash, MoMo &amp; Gift card payments all functional.</span>
+          <div style={{marginTop:'14px',padding:'10px',borderRadius:'8px',background:'#f6fbf8',display:'flex',gap:'8px',fontSize:'11px',color:'#4a635c',lineHeight:1.5}}>
+            <ShieldCheck size={14} style={{flex:'none'}}/><span><b>Owner-created accounts only.</b> Forgotten password? The owner can reset it in <b>Staff Tracking → Login</b>.<br/>First sign-in on a fresh install — owner: <b>owner / owner123</b>, Ama Boateng: <b>ama / ama123</b>, Kwame Owusu: <b>kwame / kwame123</b>. Change these after signing in.</span>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );
@@ -1021,7 +1131,7 @@ function GiftAccountPage({giftCards,customers,sales,onAdd,onPayAccount}){
   );
 }
 
-function StaffPage({employees,sales,attendance,onEdit,onAdd,onViewSales}){
+function StaffPage({employees,sales,attendance,currentUser,onEdit,onAdd,onViewSales,onCredentials}){
   const [tab,setTab]=useState('team');
   const [attFilter,setAttFilter]=useState('All');
   const today = todayKey();
@@ -1034,7 +1144,7 @@ function StaffPage({employees,sales,attendance,onEdit,onAdd,onViewSales}){
 
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> STAFF TRACKING</div><h1>Staff tracking, attendance &amp; control</h1><p>Owner creates staff accounts, sees every employee's sales history, and tracks clock-in/out hours and payroll. All sales combine to the owner.</p></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Create staff account</button></div>
+      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> STAFF TRACKING</div><h1>Staff tracking, attendance &amp; control</h1><p>Only the owner creates staff accounts and usernames/passwords — including changing their own. Owner sees every employee's sales history, clock-in/out hours and payroll.</p></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Create staff account</button></div>
 
       <div className="kpi-row" style={{marginBottom:'12px'}}>
         <span className="kpi"><Users size={14}/> <b>{employees.length}</b> staff</span>
@@ -1059,14 +1169,14 @@ function StaffPage({employees,sales,attendance,onEdit,onAdd,onViewSales}){
               const weekHours = attendance.filter(a=>a.employeeId===emp.id && a.date>=weekStart).reduce((s,a)=>s+Number(a.hours||0),0);
               const openShift = attendance.find(a=>a.employeeId===emp.id && a.date===today && !a.out);
               return <div key={emp.id} className="card" style={{padding:'14px'}}>
-                <div style={{display:'flex',gap:'10px',alignItems:'center'}}><div className={`avatar ${emp.role==='owner'?'owner':'cashier'}`} style={{width:'40px',height:'40px'}}>{emp.initials}</div><div style={{flex:1}}><b style={{fontSize:'13px'}}>{emp.name}</b><small style={{display:'block',fontSize:'11px',color:'#6b7d76'}}>{emp.role} · {emp.shift}</small></div><span className={`status ${openShift?'ok':emp.status==='On shift'?'info':'neutral'}`}><i/>{openShift?`In ${openShift.in}`:emp.status}</span></div>
+                <div style={{display:'flex',gap:'10px',alignItems:'center'}}><div className={`avatar ${emp.role==='owner'?'owner':'cashier'}`} style={{width:'40px',height:'40px'}}>{emp.initials}</div><div style={{flex:1}}><b style={{fontSize:'13px'}}>{emp.name}{currentUser?.id===emp.id?' (you)':''}</b><small style={{display:'block',fontSize:'11px',color:'#6b7d76'}}>{emp.role} · {emp.shift}{emp.username?` · signs in as @${emp.username}`:' · no username set'}</small></div><span className={`status ${openShift?'ok':emp.status==='On shift'?'info':'neutral'}`}><i/>{openShift?`In ${openShift.in}`:emp.status}</span></div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'12px'}}>
                   <div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>SALES COUNT</small><b style={{display:'block',fontSize:'14px'}}>{empSales.length}</b></div>
                   <div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>TOTAL TO OWNER</small><b style={{display:'block',fontSize:'14px'}}>{format(empTotal)}</b></div>
                   <div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>ITEMS SOLD</small><b style={{display:'block',fontSize:'14px'}}>{empItems}</b></div>
                   <div style={{padding:'8px',background:'#f9fbf9',borderRadius:'8px',border:'1px solid #e7ece8'}}><small style={{fontSize:'10px',color:'#6b7d76'}}>HOURS (7 DAYS)</small><b style={{display:'block',fontSize:'14px'}}>{weekHours}h</b></div>
                 </div>
-                <div style={{display:'flex',gap:'6px',marginTop:'10px',flexWrap:'wrap'}}><button className="btn small primary" onClick={()=>onViewSales(emp)}><FileText size={12}/> Sales history</button><button className="btn small" onClick={()=>onEdit(emp)}><Edit2 size={12}/> Edit</button><span style={{fontSize:'11px',color:'#6b7d76',marginLeft:'auto',alignSelf:'center'}}>{emp.phone}</span></div>
+                <div style={{display:'flex',gap:'6px',marginTop:'10px',flexWrap:'wrap'}}><button className="btn small primary" onClick={()=>onViewSales(emp)}><FileText size={12}/> Sales history</button><button className="btn small" onClick={()=>onEdit(emp)}><Edit2 size={12}/> Edit</button><button className="btn small" onClick={()=>onCredentials(emp)} title={`Change ${currentUser?.id===emp.id?'your own':emp.name+"'s"} username or password`}><KeyRound size={12}/> Login</button><span style={{fontSize:'11px',color:'#6b7d76',marginLeft:'auto',alignSelf:'center'}}>{emp.phone}</span></div>
               </div>
             })}
           </div>
@@ -1509,22 +1619,111 @@ function CustomerModal({customer,onClose,onSave}){
   );
 }
 
-function EmployeeModal({employee,onClose,onSave}){
-  const [form,setForm]=useState(employee||{name:'',role:'cashier',phone:'',email:'',shift:'08:00-16:00',status:'On shift',salary:1500});
-  const submit=(e)=>{
+function EmployeeModal({employee,employees=[],onClose,onSave}){
+  const isNew = !employee;
+  const [form,setForm]=useState(employee?{...employee,password:''}:{name:'',role:'cashier',phone:'',email:'',shift:'08:00-16:00',status:'On shift',salary:1500,username:'',password:''});
+  const [err,setErr]=useState('');
+  const [busy,setBusy]=useState(false);
+  const submit=async (e)=>{
     e.preventDefault();
-    if(!form.name.trim()) return;
-    onSave({id:employee?.id||uid('e'), name:form.name.trim(), role:form.role, phone:form.phone.trim(), email:form.email.trim(), shift:form.shift, status:form.status, salary:Number(form.salary||0), initials:initials(form.name)});
+    if(busy) return;
+    if(!form.name.trim()){ setErr('Name is required'); return }
+    const uname = normalizeUsername(form.username);
+    if(!uname){ setErr('Every account needs a username — the employee signs in with it'); return }
+    if(!/^[a-z0-9._-]{3,}$/.test(uname)){ setErr('Username must be at least 3 characters: letters, numbers, dot, dash or underscore'); return }
+    if(employees.some(x=>x.id!==employee?.id && normalizeUsername(x.username)===uname)){ setErr(`Username “${uname}” is already used by another account`); return }
+    if(isNew && (!form.password || form.password.length<6)){ setErr('New accounts need a starting password of at least 6 characters'); return }
+    if(form.password && form.password.length<6){ setErr('New password must be at least 6 characters'); return }
+    setBusy(true);
+    const passwordHash = form.password ? await hashPassword(form.password) : undefined;
+    setBusy(false);
+    onSave({id:employee?.id||uid('e'), name:form.name.trim(), role:form.role, phone:String(form.phone||'').trim(), email:String(form.email||'').trim(), shift:form.shift, status:form.status, salary:Number(form.salary||0), initials:initials(form.name), username:uname, ...(passwordHash?{passwordHash}:{})});
   };
   return (
     <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
-      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#ede9fe',color:'#5b21b6',display:'grid',placeItems:'center'}}><UserCircle size={18}/></div><div><h3>{employee?'Edit staff account':'Create staff account'}</h3><p>Only the owner can create employee accounts</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#ede9fe',color:'#5b21b6',display:'grid',placeItems:'center'}}><UserCircle size={18}/></div><div><h3>{employee?'Edit staff account':'Create staff account'}</h3><p>Only the owner can create employee accounts and set their login</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
         <form onSubmit={submit}><div className="modal-body">
           <div className="field"><label>Name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} required/></div>
           <div className="two"><div className="field"><label>Role</label><select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}><option value="cashier">Cashier</option><option value="manager">Manager</option><option value="owner">Owner</option></select></div><div className="field"><label>Shift</label><input value={form.shift} onChange={e=>setForm(f=>({...f,shift:e.target.value}))}/></div></div>
           <div className="two"><div className="field"><label>Phone</label><input value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div><div className="field"><label>Email</label><input value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))}/></div></div>
           <div className="two"><div className="field"><label>Status</label><select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}><option>On shift</option><option>Off duty</option><option>On leave</option></select></div><div className="field"><label>Salary (GH₵)</label><input type="number" value={form.salary} onChange={e=>setForm(f=>({...f,salary:e.target.value}))}/></div></div>
-        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary"><Check size={14}/>{employee?'Save':'Create staff account'}</button></div></form>
+          <div className="pay-detail">
+            <b style={{display:'flex',alignItems:'center',gap:'6px'}}><KeyRound size={14}/> Sign-in credentials (owner sets these)</b>
+            <div className="field"><label>Username *</label><input value={form.username} onChange={e=>setForm(f=>({...f,username:e.target.value}))} placeholder="e.g. ama" autoComplete="off" required/></div>
+            <div className="field"><label>{isNew?'Starting password *':'Reset password (leave blank to keep current)'}</label><input type="text" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))} placeholder={isNew?'At least 6 characters':'Leave blank to keep current password'} autoComplete="new-password"/></div>
+            <small style={{fontSize:'11px',color:'#6b7d76'}}>Give the username and password to the employee. Only you, the owner, can change them later — from here or Staff Tracking → Login.</small>
+          </div>
+          {err && <div style={{color:'#b91c1c',fontSize:'12px'}} role="alert">{err}</div>}
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}><Check size={14}/>{busy?'Saving…':(employee?'Save':'Create staff account')}</button></div></form>
+      </div>
+    </div>
+  );
+}
+
+// Owner-only: change an employee's username and/or reset their password.
+// Used for the owner's own account too (from their card in Staff Tracking).
+function CredentialsModal({employee,employees=[],onClose,onSave}){
+  const [username,setUsername]=useState(employee.username||'');
+  const [password,setPassword]=useState('');
+  const [confirm,setConfirm]=useState('');
+  const [err,setErr]=useState('');
+  const [busy,setBusy]=useState(false);
+  const submit=async (e)=>{
+    e.preventDefault();
+    if(busy) return;
+    const uname = normalizeUsername(username);
+    if(!uname){ setErr('Username is required'); return }
+    if(!/^[a-z0-9._-]{3,}$/.test(uname)){ setErr('Username must be at least 3 characters: letters, numbers, dot, dash or underscore'); return }
+    if(employees.some(x=>x.id!==employee.id && normalizeUsername(x.username)===uname)){ setErr(`Username “${uname}” is already used by another account`); return }
+    if(password && password.length<6){ setErr('New password must be at least 6 characters'); return }
+    if(password && password!==confirm){ setErr('New password and confirmation do not match'); return }
+    if(uname===normalizeUsername(employee.username) && !password){ setErr('Nothing to change — edit the username or type a new password'); return }
+    setBusy(true);
+    await onSave(employee,{username:uname,password:password||undefined});
+    setBusy(false);
+  };
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#e6f4f1',color:'#0f766e',display:'grid',placeItems:'center'}}><KeyRound size={18}/></div><div><h3>Login for {employee.name}</h3><p>{employee.role} account · owner only — changes apply at their next sign-in</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <form onSubmit={submit}><div className="modal-body">
+          <div className="field"><label>Username *</label><input value={username} onChange={e=>setUsername(e.target.value)} autoComplete="off" required/></div>
+          <div className="field"><label>New password (leave blank to keep current)</label><input type="text" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete="new-password"/></div>
+          <div className="field"><label>Confirm new password</label><input type="text" value={confirm} onChange={e=>setConfirm(e.target.value)} placeholder="Repeat the new password" autoComplete="new-password"/></div>
+          {err && <div style={{color:'#b91c1c',fontSize:'12px'}} role="alert">{err}</div>}
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}><KeyRound size={14}/>{busy?'Saving…':'Save login'}</button></div></form>
+      </div>
+    </div>
+  );
+}
+
+// Signed-in user changing their OWN password (must prove the current one).
+// The owner changing their own password here is the same flow; resetting an
+// employee's password without the old one is done via CredentialsModal.
+function ChangePasswordModal({user,onClose,onSave}){
+  const [current,setCurrent]=useState('');
+  const [next,setNext]=useState('');
+  const [confirm,setConfirm]=useState('');
+  const [err,setErr]=useState('');
+  const [busy,setBusy]=useState(false);
+  const submit=async (e)=>{
+    e.preventDefault();
+    if(busy) return;
+    if(next.length<6){ setErr('New password must be at least 6 characters'); return }
+    if(next!==confirm){ setErr('New password and confirmation do not match'); return }
+    setBusy(true);
+    const error = await onSave(current,next);
+    setBusy(false);
+    if(error) setErr(error);
+  };
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#e6f4f1',color:'#0f766e',display:'grid',placeItems:'center'}}><Lock size={18}/></div><div><h3>Change my password</h3><p>{user?.name}{user?.username?` · @${user.username}`:''} — your username can only be changed by the owner</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <form onSubmit={submit}><div className="modal-body">
+          <div className="field"><label>Current password *</label><input type="password" value={current} onChange={e=>setCurrent(e.target.value)} autoComplete="current-password" required autoFocus/></div>
+          <div className="field"><label>New password *</label><input type="password" value={next} onChange={e=>setNext(e.target.value)} placeholder="At least 6 characters" autoComplete="new-password" required/></div>
+          <div className="field"><label>Confirm new password *</label><input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} autoComplete="new-password" required/></div>
+          {err && <div style={{color:'#b91c1c',fontSize:'12px'}} role="alert">{err}</div>}
+        </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}><Lock size={14}/>{busy?'Saving…':'Change password'}</button></div></form>
       </div>
     </div>
   );
