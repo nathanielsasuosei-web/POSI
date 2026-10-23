@@ -45,7 +45,31 @@ only ever talks to its own origin (no CORS, no mixed content).
 | `npm run migrate -- --reset` | Drop all POSI tables first |
 | `npm run seed` | Load the demo dataset (skips existing rows) |
 | `npm run reset` | Reset + reseed |
+| `npm run check:db` | Step-by-step connection diagnosis (DNS, IPv6/IPv4, TCP, auth, schema) |
 | `npm test` | API test suite (`node:test`) against `TEST_DATABASE_URL` |
+
+## Troubleshooting the connection
+
+Run `npm run check:db`. It reports each step and prints a fix, for example:
+
+```
+Target: db.viiyewnyqizuktwrlray.supabase.co:5432/postgres
+✓ DNS resolves — IPv6 2a05:d01c:...
+✗ TCP reachable — ENETUNREACH
+
+This host has only IPv6 records and this machine has no working IPv6 route.
+Use the pooler instead:
+  postgresql://postgres.viiyewnyqizuktwrlray:...@aws-0-<region>.pooler.supabase.com:5432/postgres
+```
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `ENETUNREACH` / `EHOSTUNREACH` | `db.<ref>.supabase.co` publishes only an IPv6 address and the machine has no IPv6 route | Use the **Session pooler** URI (user `postgres.<ref>`) |
+| `Tenant or user not found` | Pooler used with the plain `postgres` user | Pooler users are `postgres.<project-ref>` |
+| `password authentication failed` | Wrong password, or special characters not URL-encoded | Reset the database password in Supabase and percent-encode it |
+| `self signed certificate` / TLS errors | Strict TLS against a host without a CA bundle | Leave `DB_SSL` unset (TLS without CA verification) or set `DB_SSL=false` |
+| `relation "products" does not exist` | Schema not applied | `npm run migrate` |
+| Works locally, fails deployed | Host firewall blocks outbound 5432 | Allow outbound TCP 5432, or connect through the pooler |
 
 ## API
 

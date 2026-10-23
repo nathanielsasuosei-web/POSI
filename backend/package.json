@@ -13,7 +13,8 @@
     "migrate": "node src/migrate.js",
     "seed": "node src/seed.js",
     "reset": "node src/migrate.js --reset && node src/seed.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "check:db": "node src/check-db.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

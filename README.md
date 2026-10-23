@@ -50,7 +50,14 @@ separately if you prefer two terminals.
 > network has no IPv6 route, use the **Session pooler** URI instead, whose user is
 > `postgres.<project-ref>` (e.g.
 > `postgresql://postgres.viiyewnyqizuktwrlray:…@aws-0-eu-central-1.pooler.supabase.com:5432/postgres`).
-> The API prints this hint automatically when the direct host cannot be reached.
+> Run `npm run db:check` (inside `backend/`) for a step-by-step diagnosis — it
+> detects DNS, IPv6-only hosts, TCP, authentication and missing tables, and
+> prints the fix. The API logs the same hint at boot.
+
+The `sb_publishable_…` / `sb_secret_…` API keys from the Supabase dashboard are
+for the REST, Auth and Storage APIs — they cannot create tables or run
+migrations. Keep the secret key server-side; this reference implementation talks
+to PostgreSQL directly through `DATABASE_URL`.
 
 ### Production build
 

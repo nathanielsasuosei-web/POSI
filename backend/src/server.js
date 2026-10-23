@@ -3,6 +3,7 @@ import { config, databaseConfigured, safeDatabaseLabel } from './config.js';
 import { databaseHealth, closePool, pool } from './db.js';
 import { migrate } from './migrate.js';
 import { seedIfEmpty } from './seed.js';
+import { supabaseHint } from './lib/hints.js';
 
 const app = createApp();
 
@@ -31,9 +32,9 @@ async function bootstrap() {
     if (health.ok) console.log(`[posi-api] database ok (${health.latencyMs}ms)`);
     else {
       console.error(`[posi-api] database not reachable: ${health.error}`);
-      if (/db\.[a-z0-9]+\.supabase\.co/i.test(config.databaseUrl)) {
-        console.error('[posi-api] hint: Supabase direct db.<ref>.supabase.co hosts are IPv6-only. If this network has no IPv6 route, use the pooler URI (Supabase → Project settings → Database → Connection string → Session pooler) with the user postgres.<ref>.');
-      }
+      const hint = supabaseHint(config.databaseUrl);
+      if (hint) console.error(`[posi-api] hint: ${hint}`);
+      console.error('[posi-api] run "npm run db:check" in the backend folder for a step-by-step diagnosis.');
     }
   }
 
