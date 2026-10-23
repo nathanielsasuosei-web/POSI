@@ -21,6 +21,9 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+  // Never serve API responses from the app-shell cache: stale pharmacy data is
+  // worse than no data, and the app keeps its own offline cache in localStorage.
+  if (url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
