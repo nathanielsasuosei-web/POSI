@@ -152,7 +152,7 @@ export function TimelinePage({ activities, sales, stockMoves, expenses, maintena
   return (
     <div>
       <div className="page-head">
-        <div><div className="eyebrow"><History size={12}/> SHOP TIMELINE</div><h1>Everything that happened, in order</h1><p>Follow sales, stock movements, spending, staff updates, messages and maintenance from one chronological activity feed.</p></div>
+        <div><div className="eyebrow"><History size={12}/> SHOP TIMELINE</div><h1>Everything that happened, in order</h1></div>
         <button className="btn" onClick={exportTimeline} disabled={!filtered.length}><Download size={15}/> Export timeline</button>
       </div>
 
@@ -261,7 +261,7 @@ export function LeadsPage({ customers, sales, products, onStartSale }) {
   return (
     <div>
       <div className="page-head">
-        <div><div className="eyebrow"><TrendingUp size={12}/> CUSTOMER PURCHASE LEADS</div><h1>Know what every customer mostly buys</h1><p>Turn real purchase history into useful follow-ups. See favourite products, buying frequency and the right moment to offer a repeat sale.</p></div>
+        <div><div className="eyebrow"><TrendingUp size={12}/> CUSTOMER PURCHASE LEADS</div><h1>Know what every customer mostly buys</h1></div>
         <button className="btn" onClick={exportLeads} disabled={!visibleLeads.length}><Download size={15}/> Export leads</button>
       </div>
 
@@ -355,7 +355,7 @@ export function MaintenancePage({ records, onSave, onComplete, onDelete }) {
   return (
     <div>
       <div className="page-head">
-        <div><div className="eyebrow"><Wrench size={12}/> MAINTENANCE</div><h1>Equipment care before it becomes downtime</h1><p>Schedule recurring service, keep a complete maintenance history and record actual costs for refrigeration, POS equipment, power and facilities.</p></div>
+        <div><div className="eyebrow"><Wrench size={12}/> MAINTENANCE</div><h1>Equipment care before it becomes downtime</h1></div>
         <div className="dashboard-actions"><button className="btn" onClick={exportRecords} disabled={!filtered.length}><Download size={15}/> Export</button><button className="btn primary" onClick={() => setModal({ record: null })}><Plus size={15}/> Schedule maintenance</button></div>
       </div>
 

@@ -988,7 +988,7 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
   };
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> POINT OF SALE</div><h1>{isOwner?'Make a sale — Cash, MoMo & Gift':'Make a sale'}</h1>{isOwner && <p>Fast drug store checkout. Select customer, add items, choose payment. All sales combine to the owner.</p>}</div><div className="kpi-row"><span className="kpi"><Package size={14}/> {allProducts.length} items</span><span className="kpi"><Users size={14}/> {customers.length-1} customers</span></div></div>
+      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> POINT OF SALE</div><h1>Make a sale</h1></div><div className="kpi-row"><span className="kpi"><Package size={14}/> {allProducts.length} items</span><span className="kpi"><Users size={14}/> {customers.length-1} customers</span></div></div>
 
       <div className="pos">
         <div className="catalog">
@@ -1077,7 +1077,7 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
   const stockValue = products.reduce((s,p)=>s+Number(p.cost||0)*Number(p.stock||0),0);
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Package size={12}/> {isOwner?'STOCK & ITEM LIST':'ITEM LIST'}</div><h1>{isOwner?'Stock management & item records':'Item list'}</h1><p>{isOwner?'Manage products, reorder levels and stock. Restock in, record damage/loss, and follow every unit in the movement log. Low stock alerts and profit tracking are owner-only.':'Browse products, prices and availability. Cost, profit and reorder tracking are managed by the owner.'}</p></div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
+      <div className="page-head"><div><div className="eyebrow"><Package size={12}/> {isOwner?'STOCK & ITEM LIST':'ITEM LIST'}</div><h1>{isOwner?'Stock management & item records':'Item list'}</h1>{!isOwner && <p>Browse products, prices and availability. Cost, profit and reorder tracking are managed by the owner.</p>}</div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
       <div className="kpi-row" style={{marginBottom:'12px'}}>
         <span className="kpi"><Package size={14}/> <b>{products.length}</b> total items</span>
         {isOwner && <span className="kpi" style={{color:low?'#92400e':'#065f46',background:low?'#fef3c7':'#ecfdf5'}}><AlertTriangle size={14}/> <b>{low}</b> low stock</span>}
@@ -1148,7 +1148,7 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
   const totalReceivable = filtered.reduce((s,c)=>s+Number(c.balance||0),0);
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> CUSTOMER LIST</div><h1>{isOwner?'Customer list & money owed':'Customer list'}</h1>{isOwner && <p>Track customers, balances and total spent. Payments reduce what customers owe. Combined to owner.</p>}</div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add customer</button></div>
+      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> CUSTOMER LIST</div><h1>Customer list</h1></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add customer</button></div>
       <div className="kpi-row" style={{marginBottom:'12px'}}><span className="kpi"><b>{filtered.length}</b> customers</span><span className="kpi" style={{background:'#fffbeb'}}><Wallet size={14}/> <b>{format(totalReceivable)}</b> owed</span>{isOwner && <span className="kpi"><TrendingUp size={14}/> Combined to owner</span>}</div>
       <div className="card">
         <div className="toolbar"><div className="search" style={{maxWidth:'360px'}}><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={selectOnEnter} placeholder="Search customer, phone…"/></div><button className="btn small" onClick={()=>{const blob=new Blob([JSON.stringify(customers,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='customers.json'; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export</button></div>
@@ -1179,7 +1179,7 @@ function InvoicesPage({sales,isOwner,filter,setFilter,onViewInvoice,onViewReceip
   const total = sales.reduce((s,x)=>s+Number(x.total||0),0);
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history — every employee':'My sales history — today'}</h1>{isOwner && <p>All invoices from every employee combined to owner. Filter by employee or payment: cash, momo, gift.</p>}</div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Items','Payment','Total']; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,s.itemCount,s.payment,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
+      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history':'My sales history — today'}</h1></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Items','Payment','Total']; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,s.itemCount,s.payment,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
 
       <div className="card">
         <div className="toolbar">
@@ -1206,7 +1206,7 @@ function GiftAccountPage({giftCards,customers,sales,onAdd,onPayAccount}){
 
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Gift size={12}/> GIFT CARDS &amp; MONEY OWED</div><h1>Gift cards &amp; money owed</h1><p>Manage gift cards (gift payment) and money customers owe. All combined to owner.</p></div><button className="btn primary" onClick={onAdd}><Plus size={16}/> New gift card</button></div>
+      <div className="page-head"><div><div className="eyebrow"><Gift size={12}/> GIFT CARDS &amp; MONEY OWED</div><h1>Gift cards &amp; money owed</h1></div><button className="btn primary" onClick={onAdd}><Plus size={16}/> New gift card</button></div>
 
       <div style={{display:'flex',gap:'8px',marginBottom:'14px'}}>
         <button className={`btn ${tab==='gift'?'primary':'ghost'}`} onClick={()=>setTab('gift')}><Gift size={14}/> Gift Cards · {format(totalGift)}</button>
@@ -1259,7 +1259,7 @@ function StaffPage({employees,sales,attendance,currentUser,onEdit,onAdd,onViewSa
 
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> STAFF TRACKING</div><h1>Staff tracking, attendance &amp; control</h1><p>Only the owner creates staff accounts and usernames/passwords — including changing their own. Owner sees every employee's sales history, clock-in/out hours and payroll.</p></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Create staff account</button></div>
+      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> STAFF TRACKING</div><h1>Staff tracking, attendance &amp; control</h1></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Create staff account</button></div>
 
       <div className="kpi-row" style={{marginBottom:'12px'}}>
         <span className="kpi"><Users size={14}/> <b>{employees.length}</b> staff</span>
@@ -1296,14 +1296,6 @@ function StaffPage({employees,sales,attendance,currentUser,onEdit,onAdd,onViewSa
             })}
           </div>
 
-          <div className="card">
-            <h2>Owner control — combined accounts</h2><p className="sub">How employee sales combine</p>
-            <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'8px',fontSize:'12px'}}>
-              <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>1</span><span><b>Employee makes sale</b> — cash, momo, or gift card. Sale recorded with seller name.</span></div>
-              <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>2</span><span><b>Automatically combined to owner</b> — owner dashboard sums all cashier totals. Payment breakdown shows cash vs momo vs gift.</span></div>
-              <div style={{display:'flex',gap:'10px',padding:'10px',background:'#f6fffe',border:'1px solid #ccede8',borderRadius:'8px'}}><span style={{width:'28px',height:'28px',borderRadius:'50%',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center',flex:'none'}}>3</span><span><b>Owner controls</b> — edit items, employees, customers, gift cards, view financial reports, send messages to employees.</span></div>
-            </div>
-          </div>
         </>
       )}
 
@@ -1565,7 +1557,7 @@ function ExpensesPage({expenses,onEdit,onAdd,onDelete}){
   const maxCat = Math.max(1,...byCategory.map(c=>c.total));
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Coins size={12}/> EXPENSES</div><h1>Expenses & business spending</h1><p>Record rent, utilities, supplies, transport and more. Expenses feed into business reports so net profit is accurate.</p></div><button className="btn primary" onClick={onAdd}><Plus size={16}/> Record expense</button></div>
+      <div className="page-head"><div><div className="eyebrow"><Coins size={12}/> EXPENSES</div><h1>Expenses & business spending</h1></div><button className="btn primary" onClick={onAdd}><Plus size={16}/> Record expense</button></div>
       <div className="kpi-row" style={{marginBottom:'12px'}}>
         <span className="kpi"><CalendarDays size={14}/> Today <b>{format(todayTotal)}</b></span>
         <span className="kpi"><Clock3 size={14}/> Last 7 days <b>{format(weekTotal)}</b></span>
