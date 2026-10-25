@@ -7,6 +7,9 @@ import {
   Users, Wallet, Wrench, X
 } from 'lucide-react';
 
+const selectOnEnter = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); e.currentTarget.select() } };
+
+
 const format = (n) => `GH₵ ${Number(n || 0).toFixed(2)}`;
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
@@ -149,7 +152,7 @@ export function TimelinePage({ activities, sales, stockMoves, expenses, maintena
   return (
     <div>
       <div className="page-head">
-        <div><div className="eyebrow"><History size={12}/> SHOP TIMELINE</div><h1>Everything that happened, in order</h1><p>Follow sales, stock movements, spending, staff updates, messages and maintenance from one chronological activity feed.</p></div>
+        <div><div className="eyebrow"><History size={12}/> SHOP TIMELINE</div><h1>Everything that happened, in order</h1></div>
         <button className="btn" onClick={exportTimeline} disabled={!filtered.length}><Download size={15}/> Export timeline</button>
       </div>
 
@@ -162,7 +165,7 @@ export function TimelinePage({ activities, sales, stockMoves, expenses, maintena
 
       <div className="card timeline-card">
         <div className="toolbar timeline-toolbar">
-          <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search invoice, product, staff or event…"/></div>
+          <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={selectOnEnter} placeholder="Search invoice, product, staff or event…"/></div>
           <select aria-label="Filter timeline by type" value={type} onChange={e => setType(e.target.value)} className="select-control">
             <option value="all">All event types</option><option value="sale">Sales</option><option value="stock">Stock</option>
             <option value="expense">Expenses</option><option value="staff">Staff</option><option value="maintenance">Maintenance</option><option value="activity">Other activity</option>
@@ -258,7 +261,7 @@ export function LeadsPage({ customers, sales, products, onStartSale }) {
   return (
     <div>
       <div className="page-head">
-        <div><div className="eyebrow"><TrendingUp size={12}/> CUSTOMER PURCHASE LEADS</div><h1>Know what every customer mostly buys</h1><p>Turn real purchase history into useful follow-ups. See favourite products, buying frequency and the right moment to offer a repeat sale.</p></div>
+        <div><div className="eyebrow"><TrendingUp size={12}/> CUSTOMER PURCHASE LEADS</div><h1>Know what every customer mostly buys</h1></div>
         <button className="btn" onClick={exportLeads} disabled={!visibleLeads.length}><Download size={15}/> Export leads</button>
       </div>
 
@@ -271,7 +274,7 @@ export function LeadsPage({ customers, sales, products, onStartSale }) {
 
       <div className="card" style={{ marginBottom: '12px' }}>
         <div className="toolbar" style={{ marginBottom: 0 }}>
-          <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search customer or favourite product…"/></div>
+          <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={selectOnEnter} placeholder="Search customer or favourite product…"/></div>
           <select className="select-control" aria-label="Lead purchase period" value={range} onChange={e => setRange(e.target.value)}><option value="all">All purchase history</option><option value="90">Last 90 days</option><option value="30">Last 30 days</option></select>
           <select className="select-control" aria-label="Sort customer leads" value={sort} onChange={e => setSort(e.target.value)}><option value="value">Highest value</option><option value="recent">Most recent</option><option value="frequency">Most visits</option><option value="name">Customer name</option></select>
         </div>
@@ -352,7 +355,7 @@ export function MaintenancePage({ records, onSave, onComplete, onDelete }) {
   return (
     <div>
       <div className="page-head">
-        <div><div className="eyebrow"><Wrench size={12}/> MAINTENANCE</div><h1>Equipment care before it becomes downtime</h1><p>Schedule recurring service, keep a complete maintenance history and record actual costs for refrigeration, POS equipment, power and facilities.</p></div>
+        <div><div className="eyebrow"><Wrench size={12}/> MAINTENANCE</div><h1>Equipment care before it becomes downtime</h1></div>
         <div className="dashboard-actions"><button className="btn" onClick={exportRecords} disabled={!filtered.length}><Download size={15}/> Export</button><button className="btn primary" onClick={() => setModal({ record: null })}><Plus size={15}/> Schedule maintenance</button></div>
       </div>
 
@@ -368,7 +371,7 @@ export function MaintenancePage({ records, onSave, onComplete, onDelete }) {
       <div className="maintenance-layout">
         <div className="card">
           <div className="toolbar">
-            <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search asset, task or service vendor…"/></div>
+            <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={selectOnEnter} placeholder="Search asset, task or service vendor…"/></div>
             <div className="chips">{[['open', 'Open'], ['attention', 'Needs attention'], ['scheduled', 'Later'], ['completed', 'Completed'], ['all', 'All']].map(([id, label]) => <button key={id} className={`chip-btn ${filter === id ? 'active' : ''}`} onClick={() => setFilter(id)}>{label}</button>)}</div>
           </div>
           <div className="table-wrap"><table><thead><tr><th>DUE / COMPLETED</th><th>ASSET & TASK</th><th>SERVICE DETAILS</th><th>FREQUENCY</th><th>COST</th><th>STATUS</th><th></th></tr></thead><tbody>
