@@ -683,7 +683,7 @@ function App({offline}){
         </div>
 
         <div className="sidebar-bottom">
-          <div className="owner-note"><ShieldCheck size={16} style={{flex:'none',marginTop:'1px'}}/><span><b>{isOwner?'Owner control':'Cashier workspace'}</b><br/>All sales combine to the owner</span></div>
+          {isOwner && <div className="owner-note"><ShieldCheck size={16} style={{flex:'none',marginTop:'1px'}}/><span><b>Owner control</b><br/>All sales combine to the owner</span></div>}
           <div className="profile">
             <div className={`avatar ${isOwner?'owner':'cashier'}`}>{currentUser?.initials||initials(currentUser?.name||'U')}</div>
             <div><b>{currentUser?.name}</b><small>{isOwner?'Store Owner':currentUser?.role}</small></div>
@@ -779,7 +779,7 @@ function App({offline}){
       {showExpenseModal && <ExpenseModal expense={editingExpense} onClose={()=>{setShowExpenseModal(false);setEditingExpense(null)}} onSave={saveExpense} employees={employees} />}
       {stockModal && <StockModal stock={stockModal} onClose={()=>setStockModal(null)} onSave={applyStockChange} />}
       {staffSales && isOwner && <StaffSalesModal employee={staffSales} sales={sales} onClose={()=>setStaffSales(null)} onViewInvoice={(s)=>{setStaffSales(null);setSelectedInvoice(s)}} onViewReceipt={(s)=>{setStaffSales(null);setSelectedReceipt(s)}} />}
-      {showPay && <PaymentModal cart={cart} subtotal={subtotal} discount={discount} total={total} customer={selectedCustomer} giftCards={giftCards} onClose={()=>setShowPay(false)} onComplete={completeSale} />}
+      {showPay && <PaymentModal cart={cart} subtotal={subtotal} discount={discount} total={total} customer={selectedCustomer} giftCards={giftCards} onClose={()=>setShowPay(false)} onComplete={completeSale} isOwner={isOwner} />}
       {selectedInvoice && <InvoiceModal sale={selectedInvoice} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} />}
       {selectedReceipt && <ReceiptModal sale={selectedReceipt} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedReceipt(null)} />}
       {toast && <div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
@@ -967,7 +967,7 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
 function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,cart,setCart,addToCart,updateQty,removeFromCart,customers,selectedCustomerId,setSelectedCustomerId,subtotal,discount,total,itemCount,discountOn,setDiscountOn,showPay,setShowPay,mobileCart,setMobileCart,completeSale,giftCards,onAddProduct,isOwner,discountPercent}){
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> POINT OF SALE</div><h1>Make a sale — Cash, MoMo &amp; Gift</h1><p>Fast drug store checkout. Select customer, add items, choose payment. All sales combine to the owner.</p></div><div className="kpi-row"><span className="kpi"><Package size={14}/> {allProducts.length} items</span><span className="kpi"><Users size={14}/> {customers.length-1} customers</span></div></div>
+      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> POINT OF SALE</div><h1>{isOwner?'Make a sale — Cash, MoMo & Gift':'Make a sale'}</h1>{isOwner && <p>Fast drug store checkout. Select customer, add items, choose payment. All sales combine to the owner.</p>}</div><div className="kpi-row"><span className="kpi"><Package size={14}/> {allProducts.length} items</span><span className="kpi"><Users size={14}/> {customers.length-1} customers</span></div></div>
 
       <div className="pos">
         <div className="catalog">
@@ -1035,7 +1035,7 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
           </div>
 
           <button className="checkout" disabled={!cart.length} onClick={()=>setShowPay('Cash')}><span>Charge {format(total)}</span><ArrowRight size={18}/></button>
-          <div className="secure"><ShieldCheck size={12}/> All sales combine to the owner</div>
+          {isOwner && <div className="secure"><ShieldCheck size={12}/> All sales combine to the owner</div>}
         </div>
       </div>
     </div>
@@ -1127,8 +1127,8 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
   const totalReceivable = filtered.reduce((s,c)=>s+Number(c.balance||0),0);
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> CUSTOMER LIST</div><h1>Customer list &amp; money owed</h1><p>Track customers, balances and total spent. Payments reduce what customers owe. Combined to owner.</p></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add customer</button></div>
-      <div className="kpi-row" style={{marginBottom:'12px'}}><span className="kpi"><b>{filtered.length}</b> customers</span><span className="kpi" style={{background:'#fffbeb'}}><Wallet size={14}/> <b>{format(totalReceivable)}</b> owed</span><span className="kpi"><TrendingUp size={14}/> Combined to owner</span></div>
+      <div className="page-head"><div><div className="eyebrow"><Users size={12}/> CUSTOMER LIST</div><h1>{isOwner?'Customer list & money owed':'Customer list'}</h1>{isOwner && <p>Track customers, balances and total spent. Payments reduce what customers owe. Combined to owner.</p>}</div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add customer</button></div>
+      <div className="kpi-row" style={{marginBottom:'12px'}}><span className="kpi"><b>{filtered.length}</b> customers</span><span className="kpi" style={{background:'#fffbeb'}}><Wallet size={14}/> <b>{format(totalReceivable)}</b> owed</span>{isOwner && <span className="kpi"><TrendingUp size={14}/> Combined to owner</span>}</div>
       <div className="card">
         <div className="toolbar"><div className="search" style={{maxWidth:'360px'}}><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search customer, phone…"/></div><button className="btn small" onClick={()=>{const blob=new Blob([JSON.stringify(customers,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='customers.json'; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export</button></div>
         <div className="table-wrap"><table><thead><tr><th>CUSTOMER</th><th>PHONE</th><th>BALANCE (OWES)</th><th>TOTAL SPENT</th><th>VISITS</th><th>STATUS</th><th></th></tr></thead><tbody>
@@ -1158,7 +1158,7 @@ function InvoicesPage({sales,isOwner,filter,setFilter,onViewInvoice,onViewReceip
   const total = sales.reduce((s,x)=>s+Number(x.total||0),0);
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history — every employee':'My sales history — today'}</h1><p>{isOwner?'All invoices from every employee combined to owner. Filter by employee or payment: cash, momo, gift.':`Your sales today only (${readableDate(todayKey())}). Earlier sales are kept by the owner.`}</p></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Items','Payment','Total']; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,s.itemCount,s.payment,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
+      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history — every employee':'My sales history — today'}</h1>{isOwner && <p>All invoices from every employee combined to owner. Filter by employee or payment: cash, momo, gift.</p>}</div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Items','Payment','Total']; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,s.itemCount,s.payment,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
 
       <div className="card">
         <div className="toolbar">
@@ -1460,7 +1460,7 @@ function MessagesPage({messages,employees,currentUser,isOwner,onSend,onMarkRead}
 
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><MessageSquare size={12}/> OWNER MESSAGES TO EMPLOYEES</div><h1>Messages — owner to employees</h1><p>Owner can broadcast to all or send to specific employee. Employees see inbox. Combined account shop communication.</p></div>{isOwner && <button className="btn primary" onClick={onSend}><Send size={16}/> New message</button>}</div>
+      <div className="page-head"><div><div className="eyebrow"><MessageSquare size={12}/> {isOwner?'OWNER MESSAGES TO EMPLOYEES':'MESSAGES'}</div><h1>{isOwner?'Messages — owner to employees':'Messages'}</h1>{isOwner && <p>Owner can broadcast to all or send to specific employee. Employees see inbox. Combined account shop communication.</p>}</div>{isOwner && <button className="btn primary" onClick={onSend}><Send size={16}/> New message</button>}</div>
 
       <div className="kpi-row" style={{marginBottom:'12px'}}><span className="kpi"><b>{inbox.length}</b> total</span><span className="kpi" style={{background:unread?'#fef3c7':'#ecfdf5'}}><Mail size={14}/> <b>{unread}</b> unread</span><div style={{marginLeft:'auto',display:'flex',gap:'6px'}}>{['all','unread','sent'].map(f=><button key={f} className={`btn small ${filter===f?'primary':'ghost'}`} onClick={()=>setFilter(f)}>{f}</button>)}</div></div>
 
@@ -1480,10 +1480,10 @@ function MessagesPage({messages,employees,currentUser,isOwner,onSend,onMarkRead}
         {filtered.length===0 && <div className="empty-state"><MessageSquare size={20}/><b>No messages</b><small>{filter==='unread'?'All caught up':'No messages in this filter'}</small></div>}
       </div>
 
-      <div className="card" style={{marginTop:'14px',background:'#f6fffe',borderColor:'#ccede8'}}>
+      {isOwner && <div className="card" style={{marginTop:'14px',background:'#f6fffe',borderColor:'#ccede8'}}>
         <h2 style={{display:'flex',alignItems:'center',gap:'8px'}}><ShieldCheck size={16}/> Owner message control</h2>
         <p className="sub" style={{marginTop:'6px'}}>Only the owner can send messages to staff. Messages are shop-wide — use for shift notes, payment reminders and stock alerts. Employees can read messages but cannot send or reply.</p>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -1863,7 +1863,7 @@ function MessageModal({employees,currentUser,onClose,onSend}){
   );
 }
 
-function PaymentModal({cart,subtotal,discount,total,customer,giftCards,onClose,onComplete}){
+function PaymentModal({cart,subtotal,discount,total,customer,giftCards,onClose,onComplete,isOwner}){
   const [method,setMethod]=useState('Cash');
   const [cashTendered,setCashTendered]=useState(String(total));
   const [momoPhone,setMomoPhone]=useState(customer.phone||'');
@@ -1894,7 +1894,7 @@ function PaymentModal({cart,subtotal,discount,total,customer,giftCards,onClose,o
   return (
     <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
       <div className="modal wide">
-        <div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center'}}><Wallet size={18}/></div><div><h3>Complete sale — {method}</h3><p>{customer.name} · {format(total)} · {cart.length} items · Combined to owner</p></div><button className="btn icon small no-print" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
+        <div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#0f2320',color:'#fff',display:'grid',placeItems:'center'}}><Wallet size={18}/></div><div><h3>Complete sale — {method}</h3><p>{customer.name} · {format(total)} · {cart.length} items{isOwner && ' · Combined to owner'}</p></div><button className="btn icon small no-print" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
         <div className="modal-body">
           <div style={{display:'flex',gap:'6px',overflow:'auto',paddingBottom:'4px'}}>
             {paymentMethods.map(pm=>(
@@ -1911,14 +1911,14 @@ function PaymentModal({cart,subtotal,discount,total,customer,giftCards,onClose,o
             <div className="pay-detail">
               <b><Banknote size={14} style={{verticalAlign:'-2px'}}/> Cash payment</b>
               <div className="two"><div className="field"><label>Cash tendered (GH\u20b5)</label><input type="number" step="0.01" value={cashTendered} onChange={e=>setCashTendered(e.target.value)}/></div><div className="field"><label>Change</label><input value={format(Math.max(0,change))} readOnly style={{background:'#f9fbf9',fontWeight:800}}/></div></div>
-              <small style={{fontSize:'11px',color:'#6b7d76'}}>Cash sales combine directly to owner cash account.</small>
+              {isOwner && <small style={{fontSize:'11px',color:'#6b7d76'}}>Cash sales combine directly to owner cash account.</small>}
             </div>
           )}
           {method==='MoMo' && (
             <div className="pay-detail">
               <b><Smartphone size={14}/> MoMo payment</b>
               <div className="two"><div className="field"><label>MoMo phone *</label><input value={momoPhone} onChange={e=>setMomoPhone(e.target.value)} placeholder="0244..."/></div><div className="field"><label>Transaction ID</label><input value={momoTxn} onChange={e=>setMomoTxn(e.target.value)} placeholder="Auto if empty"/></div></div>
-              <small style={{fontSize:'11px',color:'#6b7d76'}}>Mobile Money sales combine to owner MoMo account.</small>
+              {isOwner && <small style={{fontSize:'11px',color:'#6b7d76'}}>Mobile Money sales combine to owner MoMo account.</small>}
             </div>
           )}
           {method==='Gift' && (
