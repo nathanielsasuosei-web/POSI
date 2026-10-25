@@ -1673,7 +1673,7 @@ function ExpenseModal({expense,onClose,onSave,employees}){
 }
 
 function ProductModal({product,categories,defaultLowStock=5,onClose,onSave}){
-  const [form,setForm]=useState(product||{name:'',sku:'',category:categories[0]||'Groceries',brand:'',price:'',cost:'',stock:'',barcode:'',supplier:'',lowStockAt:defaultLowStock});
+  const [form,setForm]=useState(product||{name:'',sku:'',category:'Other',brand:'',price:'',cost:'',stock:'',barcode:'',supplier:'',lowStockAt:defaultLowStock});
   const [err,setErr]=useState('');
   const submit = (e)=>{
     e.preventDefault();
@@ -1699,7 +1699,7 @@ function ProductModal({product,categories,defaultLowStock=5,onClose,onSave}){
       <div className="modal"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#e6f4f1',color:'#0f766e',display:'grid',placeItems:'center'}}><Package size={18}/></div><div><h3>{product?'Edit item':'Add item'}</h3><p>Item list — owner controls inventory</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
         <form onSubmit={submit}><div className="modal-body">
           <div className="field"><label>Product name *</label><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Paracetamol 500mg" required/></div>
-          <div className="two"><div className="field"><label>Category *</label><select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>{categories.map(c=><option key={c}>{c}</option>)}</select></div><div className="field"><label>Brand / size</label><input value={form.brand} onChange={e=>setForm(f=>({...f,brand:e.target.value}))} placeholder="e.g. 5kg"/></div></div>
+          <div className="field"><label>Brand / size</label><input value={form.brand} onChange={e=>setForm(f=>({...f,brand:e.target.value}))} placeholder="e.g. 5kg"/></div>
           <div className="two"><div className="field"><label>Selling price (GH₵) *</label><input type="number" step="0.01" min="0" value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))} required/></div><div className="field"><label>Cost price (for profit)</label><input type="number" step="0.01" min="0" value={form.cost} onChange={e=>setForm(f=>({...f,cost:e.target.value}))} placeholder="0"/></div></div>
           <div className="two"><div className="field"><label>Stock quantity *</label><input type="number" min="0" step="1" value={form.stock} onChange={e=>setForm(f=>({...f,stock:e.target.value}))} required/></div><div className="field"><label>Reorder level (low stock alert at)</label><input type="number" min="0" step="1" value={form.lowStockAt??5} onChange={e=>setForm(f=>({...f,lowStockAt:e.target.value}))}/></div></div>
           <div className="two"><div className="field"><label>SKU</label><input value={form.sku} onChange={e=>setForm(f=>({...f,sku:e.target.value}))} placeholder="Auto if empty"/></div><div className="field"><label>Supplier (optional)</label><input value={form.supplier||''} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))} placeholder="e.g. Royal Farms"/></div></div>
