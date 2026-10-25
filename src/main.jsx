@@ -32,6 +32,8 @@ const K = {
 };
 
 // helpers
+// Enter in a search box keeps the cursor there and selects the text, so the next search replaces it.
+const selectOnEnter = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); e.currentTarget.select() } };
 const format = (n) => `GH₵ ${Number(n || 0).toFixed(2)}`;
 const todayKey = () => new Date().toISOString().slice(0,10);
 const shortTime = (d=new Date()) => d.toLocaleTimeString('en-GH',{hour:'2-digit',minute:'2-digit',hour12:false});
@@ -965,6 +967,25 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
 }
 
 function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,cart,setCart,addToCart,updateQty,removeFromCart,customers,selectedCustomerId,setSelectedCustomerId,subtotal,discount,total,itemCount,discountOn,setDiscountOn,showPay,setShowPay,mobileCart,setMobileCart,completeSale,giftCards,onAddProduct,isOwner,discountPercent}){
+  const searchRef = useRef(null);
+  const focusSearch = ()=>{ const el=searchRef.current; if(el){ el.focus(); el.select() } };
+  // ⌘K / Ctrl+K jumps the cursor to the product search
+  useEffect(()=>{
+    const onKey=(e)=>{ if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); focusSearch() } };
+    window.addEventListener('keydown',onKey); return ()=>window.removeEventListener('keydown',onKey);
+  },[]);
+  // Enter on a search that matches one product (or an exact barcode/SKU) adds it and clears the box for the next search
+  const onSearchKey = (e)=>{
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    const q = search.trim().toLowerCase();
+    if(q){
+      const exact = products.filter(p=>(p.barcode && p.barcode.toLowerCase()===q) || (p.sku && p.sku.toLowerCase()===q));
+      const hit = exact.length===1 ? exact[0] : (products.length===1 ? products[0] : null);
+      if(hit){ addToCart(hit); setSearch(''); }
+    }
+    focusSearch();
+  };
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> POINT OF SALE</div><h1>{isOwner?'Make a sale — Cash, MoMo & Gift':'Make a sale'}</h1>{isOwner && <p>Fast drug store checkout. Select customer, add items, choose payment. All sales combine to the owner.</p>}</div><div className="kpi-row"><span className="kpi"><Package size={14}/> {allProducts.length} items</span><span className="kpi"><Users size={14}/> {customers.length-1} customers</span></div></div>
@@ -973,7 +994,7 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
         <div className="catalog">
           <div className="card" style={{padding:'12px'}}>
             <div className="search-row">
-              <div className="search"><Search size={16} color="#6b7d76"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, SKU, barcode…"/><span style={{fontSize:'10px',color:'#94a8a1',border:'1px solid #e7ece8',padding:'2px 6px',borderRadius:'4px'}}>⌘K</span></div>
+              <div className="search"><Search size={16} color="#6b7d76"/><input ref={searchRef} value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={onSearchKey} placeholder="Search name, SKU, barcode…"/><span style={{fontSize:'10px',color:'#94a8a1',border:'1px solid #e7ece8',padding:'2px 6px',borderRadius:'4px'}}>⌘K</span></div>
               {isOwner && <button className="btn small" onClick={onAddProduct}><Plus size={14}/> Add item</button>}
             </div>
             <div className="chips" style={{marginTop:'10px'}}>
@@ -984,7 +1005,7 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
 
           <div className="products">
             {products.map(p=>(
-              <button key={p.id} className="prod" onClick={()=>addToCart(p)} disabled={p.stock<1}>
+              <button key={p.id} className="prod" onClick={()=>{addToCart(p); focusSearch()}} disabled={p.stock<1}>
                 <div className="prod-top"><span className={`stock ${isOwner&&p.stock<=reorderOf(p)?'low':''}`}>{p.stock<1?'Out of stock':(isOwner&&p.stock<=reorderOf(p)?`${p.stock} left`:'In stock')}</span></div>
                 <b>{p.name}</b><small>{p.brand} · {p.category}</small>
                 <div className="prod-foot"><strong>{format(p.price)}</strong><span className="add">Add</span></div>
@@ -1066,7 +1087,7 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
       </div>
       <div className="card">
         <div className="toolbar">
-          <div className="search" style={{maxWidth:'380px'}}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={isOwner?'Search items, SKU, brand, supplier…':'Search items, SKU, brand…'}/></div>
+          <div className="search" style={{maxWidth:'380px'}}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={selectOnEnter} placeholder={isOwner?'Search items, SKU, brand, supplier…':'Search items, SKU, brand…'}/></div>
           <select value={cat} onChange={e=>setCat(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option>{categories.filter(c=>c!=='All').map(c=><option key={c}>{c}</option>)}</select>
           {isOwner && <div className="chips">{['All','Low','Out'].map(f=><button key={f} className={`chip-btn ${stockFilter===f?'active':''}`} onClick={()=>setStockFilter(f)}>{f==='All'?'All stock':f==='Low'?'Low stock':'Out of stock'}</button>)}</div>}
         </div>
@@ -1130,7 +1151,7 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
       <div className="page-head"><div><div className="eyebrow"><Users size={12}/> CUSTOMER LIST</div><h1>{isOwner?'Customer list & money owed':'Customer list'}</h1>{isOwner && <p>Track customers, balances and total spent. Payments reduce what customers owe. Combined to owner.</p>}</div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add customer</button></div>
       <div className="kpi-row" style={{marginBottom:'12px'}}><span className="kpi"><b>{filtered.length}</b> customers</span><span className="kpi" style={{background:'#fffbeb'}}><Wallet size={14}/> <b>{format(totalReceivable)}</b> owed</span>{isOwner && <span className="kpi"><TrendingUp size={14}/> Combined to owner</span>}</div>
       <div className="card">
-        <div className="toolbar"><div className="search" style={{maxWidth:'360px'}}><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search customer, phone…"/></div><button className="btn small" onClick={()=>{const blob=new Blob([JSON.stringify(customers,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='customers.json'; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export</button></div>
+        <div className="toolbar"><div className="search" style={{maxWidth:'360px'}}><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={selectOnEnter} placeholder="Search customer, phone…"/></div><button className="btn small" onClick={()=>{const blob=new Blob([JSON.stringify(customers,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='customers.json'; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export</button></div>
         <div className="table-wrap"><table><thead><tr><th>CUSTOMER</th><th>PHONE</th><th>BALANCE (OWES)</th><th>TOTAL SPENT</th><th>VISITS</th><th>STATUS</th><th></th></tr></thead><tbody>
           {filtered.map(c=>{
             const custSales = sales.filter(s=>s.customerId===c.id);
@@ -1162,7 +1183,7 @@ function InvoicesPage({sales,isOwner,filter,setFilter,onViewInvoice,onViewReceip
 
       <div className="card">
         <div className="toolbar">
-          <div className="search" style={{maxWidth:'320px'}}><Search size={16}/><input value={filter.search} onChange={e=>setFilter(f=>({...f,search:e.target.value}))} placeholder="Search invoice, customer, seller…"/></div>
+          <div className="search" style={{maxWidth:'320px'}}><Search size={16}/><input value={filter.search} onChange={e=>setFilter(f=>({...f,search:e.target.value}))} onKeyDown={selectOnEnter} placeholder="Search invoice, customer, seller…"/></div>
           {isOwner && <select value={filter.cashier||'All'} onChange={e=>setFilter(f=>({...f,cashier:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All employees</option>{employees.filter(e=>e.role!=='owner').map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>}
           <select value={filter.payment} onChange={e=>setFilter(f=>({...f,payment:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option><option>Cash</option><option>MoMo</option><option>Gift</option></select>
           {isOwner && <select value={filter.date} onChange={e=>setFilter(f=>({...f,date:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>}
@@ -1556,7 +1577,7 @@ function ExpensesPage({expenses,onEdit,onAdd,onDelete}){
       <div className="grid layout-2" style={{marginBottom:'14px',alignItems:'start'}}>
         <div className="card">
           <div className="toolbar">
-            <div className="search" style={{maxWidth:'320px'}}><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search note, category, staff…"/></div>
+            <div className="search" style={{maxWidth:'320px'}}><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={selectOnEnter} placeholder="Search note, category, staff…"/></div>
             <select value={cat} onChange={e=>setCat(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option>{expenseCategories.map(c=><option key={c}>{c}</option>)}</select>
             <select value={range} onChange={e=>setRange(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>
             <button className="btn small" onClick={()=>{ const header=['ID','Date','Category','Note','Payment','Recorded by','Amount']; const rows=filtered.map(e=>[e.id,e.date,e.category,e.note,e.payment,e.by,e.amount]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`expenses-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button>

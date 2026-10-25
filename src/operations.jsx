@@ -7,6 +7,9 @@ import {
   Users, Wallet, Wrench, X
 } from 'lucide-react';
 
+const selectOnEnter = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); e.currentTarget.select() } };
+
+
 const format = (n) => `GH₵ ${Number(n || 0).toFixed(2)}`;
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
@@ -162,7 +165,7 @@ export function TimelinePage({ activities, sales, stockMoves, expenses, maintena
 
       <div className="card timeline-card">
         <div className="toolbar timeline-toolbar">
-          <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search invoice, product, staff or event…"/></div>
+          <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={selectOnEnter} placeholder="Search invoice, product, staff or event…"/></div>
           <select aria-label="Filter timeline by type" value={type} onChange={e => setType(e.target.value)} className="select-control">
             <option value="all">All event types</option><option value="sale">Sales</option><option value="stock">Stock</option>
             <option value="expense">Expenses</option><option value="staff">Staff</option><option value="maintenance">Maintenance</option><option value="activity">Other activity</option>
@@ -271,7 +274,7 @@ export function LeadsPage({ customers, sales, products, onStartSale }) {
 
       <div className="card" style={{ marginBottom: '12px' }}>
         <div className="toolbar" style={{ marginBottom: 0 }}>
-          <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search customer or favourite product…"/></div>
+          <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={selectOnEnter} placeholder="Search customer or favourite product…"/></div>
           <select className="select-control" aria-label="Lead purchase period" value={range} onChange={e => setRange(e.target.value)}><option value="all">All purchase history</option><option value="90">Last 90 days</option><option value="30">Last 30 days</option></select>
           <select className="select-control" aria-label="Sort customer leads" value={sort} onChange={e => setSort(e.target.value)}><option value="value">Highest value</option><option value="recent">Most recent</option><option value="frequency">Most visits</option><option value="name">Customer name</option></select>
         </div>
@@ -368,7 +371,7 @@ export function MaintenancePage({ records, onSave, onComplete, onDelete }) {
       <div className="maintenance-layout">
         <div className="card">
           <div className="toolbar">
-            <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search asset, task or service vendor…"/></div>
+            <div className="search"><Search size={16}/><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={selectOnEnter} placeholder="Search asset, task or service vendor…"/></div>
             <div className="chips">{[['open', 'Open'], ['attention', 'Needs attention'], ['scheduled', 'Later'], ['completed', 'Completed'], ['all', 'All']].map(([id, label]) => <button key={id} className={`chip-btn ${filter === id ? 'active' : ''}`} onClick={() => setFilter(id)}>{label}</button>)}</div>
           </div>
           <div className="table-wrap"><table><thead><tr><th>DUE / COMPLETED</th><th>ASSET & TASK</th><th>SERVICE DETAILS</th><th>FREQUENCY</th><th>COST</th><th>STATUS</th><th></th></tr></thead><tbody>
