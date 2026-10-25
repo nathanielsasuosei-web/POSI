@@ -6,10 +6,14 @@ import {
   Search, Plus, Minus, X, Check, LogOut, Store, Clock3, TrendingUp, AlertTriangle,
   ArrowRight, ChevronDown, Download, Printer, ShieldCheck, CalendarDays, UserRound,
   CheckCircle2, DollarSign, PiggyBank, Landmark, Mail, Send, Eye, Edit2, Trash2, UserPlus,
-  Bell, ClipboardList, History, Coins, AlarmClock, TrendingDown, KeyRound, Lock, EyeOff
+  Bell, ClipboardList, History, Coins, AlarmClock, TrendingDown, KeyRound, Lock, EyeOff,
+  Wrench, Settings, MoreHorizontal
 } from 'lucide-react';
 import './style.css';
 import { useOfflineSupport, OfflineBanner, OfflineChip } from './offline.jsx';
+import {
+  DEFAULT_SETTINGS, DEFAULT_MAINTENANCE, TimelinePage, LeadsPage, MaintenancePage, SettingsPage
+} from './operations.jsx';
 
 // Storage keys
 const K = {
@@ -23,6 +27,8 @@ const K = {
   attendance: 'posi-v3-attendance',
   expenses: 'posi-v3-expenses',
   stockMoves: 'posi-v3-stockmoves',
+  settings: 'posi-v3-settings',
+  maintenance: 'posi-v3-maintenance',
 };
 
 // helpers
@@ -177,12 +183,16 @@ function App({offline}){
   const [giftCards,setGiftCards]=usePersistent(K.giftCards, starterGiftCards);
   const [messages,setMessages]=usePersistent(K.messages, starterMessages);
   const [activities,setActivities]=usePersistent(K.activities, [
-    {id:'a1',type:'sale',title:'Ama Boateng completed a sale',detail:'GH₵ 109 · Cash',time:'10:42'},
-    {id:'a2',type:'sale',title:'Kwame Owusu completed a sale',detail:'GH₵ 74 · MoMo',time:'10:31'},
+    {id:'a1',type:'sale',title:'Ama Boateng completed a sale',detail:'GH₵ 109 · Cash',date:todayKey(),time:'10:42'},
+    {id:'a2',type:'sale',title:'Kwame Owusu completed a sale',detail:'GH₵ 74 · MoMo',date:todayKey(),time:'10:31'},
   ]);
   const [attendance,setAttendance]=usePersistent(K.attendance, starterAttendance);
   const [expenses,setExpenses]=usePersistent(K.expenses, starterExpenses);
   const [stockMoves,setStockMoves]=usePersistent(K.stockMoves, starterStockMoves);
+  const [settings,setSettings]=usePersistent(K.settings, DEFAULT_SETTINGS);
+  const [maintenance,setMaintenance]=usePersistent(K.maintenance, DEFAULT_MAINTENANCE);
+  const shop = {...SHOP,...settings,name:settings.shopName||SHOP.name};
+  const discountPercent = Number(settings.discountPercent ?? 10);
 
   const [userId,setUserId]=useState(()=>{ try{ return sessionStorage.getItem('pos-user-id')||null }catch{return null}});
   const [view,setView]=useState('pos');
@@ -200,6 +210,7 @@ function App({offline}){
   const [selectedInvoice,setSelectedInvoice]=useState(null);
   const [selectedReceipt,setSelectedReceipt]=useState(null);
   const [mobileCart,setMobileCart]=useState(false);
+  const [mobileMore,setMobileMore]=useState(false);
 
   // modals
   const [showProductModal,setShowProductModal]=useState(false);
@@ -302,7 +313,53 @@ function App({offline}){
     return null;
   };
 
-  const addActivity = (a)=> setActivities(p=>[{id:uid('act'),...a,time:shortTime()},...p].slice(0,40));
+  const addActivity = (a)=> setActivities(p=>[{id:uid('act'),...a,date:todayKey(),time:shortTime()},...p].slice(0,120));
+
+  // Settings, maintenance and portable local-data export
+  const saveSettings = (next)=>{
+    setSettings(next);
+    addActivity({type:'settings',title:`${currentUser?.name||'Owner'} updated store settings`,detail:'Store profile, sales and receipt defaults'});
+    flash('Settings saved on this device');
+  };
+  const saveMaintenance = (record)=>{
+    const exists = maintenance.some(m=>m.id===record.id);
+    setMaintenance(list=>exists ? list.map(m=>m.id===record.id?record:m) : [record,...list]);
+    addActivity({type:'maintenance',title:`${exists?'Maintenance updated':'Maintenance scheduled'} · ${record.asset}`,detail:`${record.title} · due ${readableDate(record.dueDate)}`});
+    flash(exists?'Maintenance plan updated':'Maintenance scheduled');
+  };
+  const completeMaintenance = (record,completion)=>{
+    const completed = {...record,status:'completed',completedDate:completion.completedDate,actualCost:completion.actualCost,completionNotes:completion.notes};
+    setMaintenance(list=>{
+      const updated = list.map(m=>m.id===record.id?completed:m);
+      if(!completion.scheduleNext) return updated;
+      const next = {
+        ...record,id:uid('mnt'),status:'scheduled',dueDate:completion.nextDue,lastCompleted:completion.completedDate,
+        cost:completion.actualCost,actualCost:undefined,completedDate:undefined,completionNotes:'',
+      };
+      return [next,...updated];
+    });
+    if(completion.logExpense && completion.actualCost>0){
+      setExpenses(es=>[{id:uid('x'),date:completion.completedDate,category:'Maintenance',amount:completion.actualCost,payment:'Cash',note:`${record.asset} — ${record.title}`,by:currentUser?.name||'Owner'},...es]);
+    }
+    addActivity({type:'maintenance',title:`Maintenance completed · ${record.asset}`,detail:`${record.title} · ${format(completion.actualCost)}${completion.scheduleNext?` · next ${readableDate(completion.nextDue)}`:''}`});
+    flash(completion.scheduleNext?`Service completed · next visit ${readableDate(completion.nextDue)}`:'Maintenance completed');
+  };
+  const deleteMaintenance = (id)=>{
+    const record = maintenance.find(m=>m.id===id);
+    setMaintenance(list=>list.filter(m=>m.id!==id));
+    addActivity({type:'maintenance',title:`Maintenance record removed · ${record?.asset||'Equipment'}`,detail:record?.title||''});
+    flash('Maintenance record deleted');
+  };
+  const exportShopData = ()=>{
+    const payload = {
+      app:'POSI',version:3,exportedAt:new Date().toISOString(),
+      data:{products,sales,customers,employees,giftCards,messages,activities,attendance,expenses,stockMoves,maintenance,settings},
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
+    const a=document.createElement('a'); a.href=url; a.download=`posi-shop-backup-${todayKey()}.json`; a.click(); URL.revokeObjectURL(url);
+    addActivity({type:'settings',title:`${currentUser?.name||'Owner'} exported shop data`,detail:'Complete JSON backup downloaded'});
+    flash('Shop data export downloaded');
+  };
 
   // Low stock alerts
   const lowStockItems = useMemo(()=> products
@@ -482,7 +539,7 @@ function App({offline}){
   const removeFromCart = (id)=> setCart(prev=>prev.filter(i=>i.id!==id));
 
   const subtotal = cart.reduce((s,i)=>s+i.price*i.qty,0);
-  const discount = discountOn ? subtotal*0.1 : 0;
+  const discount = discountOn ? subtotal*(discountPercent/100) : 0;
   const total = subtotal - discount;
   const itemCount = cart.reduce((s,i)=>s+i.qty,0);
   const selectedCustomer = customers.find(c=>c.id===selectedCustomerId) || customers[0];
@@ -496,7 +553,7 @@ function App({offline}){
     }
 
     const saleId = `POS-${String(Date.now()).slice(-6)}`;
-    const invoiceNumber = saleId.replace('POS','INV');
+    const invoiceNumber = `${settings.invoicePrefix || 'INV'}-${String(Date.now()).slice(-6)}`;
     const sale = {
       id:saleId, invoiceNumber,
       date:todayKey(), time:shortTime(),
@@ -572,13 +629,17 @@ function App({offline}){
     {id:'dashboard',label:'Dashboard',icon:LayoutDashboard},
     {id:'pos',label:'Point of Sale',icon:ShoppingCart},
     {id:'inventory',label:'Stock & Items',icon:Package},
+    {id:'leads',label:'Customer Leads',icon:TrendingUp},
     {id:'customers',label:'Customers',icon:Users},
     {id:'invoices',label:'Sales & Receipts',icon:FileText},
     {id:'expenses',label:'Expenses',icon:Coins},
+    {id:'maintenance',label:'Maintenance',icon:Wrench},
+    {id:'timeline',label:'Activity Timeline',icon:History},
     {id:'gift',label:'Gift Cards & Money Owed',icon:Gift},
     {id:'staff',label:'Staff Tracking',icon:UserCircle},
     {id:'reports',label:'Business Reports',icon:BarChart3},
     {id:'messages',label:'Messages',icon:MessageSquare},
+    {id:'settings',label:'Settings',icon:Settings},
   ];
   const navCashier = [
     {id:'pos',label:'POS',icon:ShoppingCart},
@@ -589,21 +650,22 @@ function App({offline}){
   ];
   const nav = isOwner?navOwner:navCashier;
 
-  if(!currentUser) return <LoginScreen onSignIn={signIn} />;
+  if(!currentUser) return <LoginScreen onSignIn={signIn} shop={shop} />;
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <a className="brand" href="#"><div className="brand-mark">P</div><div className="brand-copy"><b>POSI<span>.</span></b><small>SHOP MANAGER</small></div></a>
-        <div className="shop-card"><div className="shop-icon"><Store size={16}/></div><div className="shop-copy"><b>{SHOP.name}</b><small>{SHOP.address}</small></div><span className="shop-dot"/></div>
+        <div className="shop-card"><div className="shop-icon"><Store size={16}/></div><div className="shop-copy"><b>{shop.name}</b><small>{shop.address}</small></div><span className="shop-dot"/></div>
 
-        <div className="nav-section">
+        <div className="nav-section nav-scroll">
           <div className="nav-label">MAIN MENU</div>
           <div className="nav-list">
             {nav.map(n=>(
               <button key={n.id} className={`nav-item ${view===n.id?'active':''}`} onClick={()=>setView(n.id)}>
                 <n.icon size={18}/><span>{n.label}</span>
                 {n.id==='inventory' && isOwner && lowStockItems.length>0 && <span className="badge">{lowStockItems.length}</span>}
+                {n.id==='maintenance' && maintenance.filter(m=>m.status!=='completed' && m.dueDate<=todayKey()).length>0 && <span className="badge">{maintenance.filter(m=>m.status!=='completed' && m.dueDate<=todayKey()).length}</span>}
                 {n.id==='messages' && messages.filter(m=> (m.to==='all' || m.to===currentUser?.id) && !m.readBy?.includes(currentUser?.id)).length>0 && <span className="badge">{messages.filter(m=> (m.to==='all' || m.to===currentUser?.id) && !m.readBy?.includes(currentUser?.id)).length}</span>}
               </button>
             ))}
@@ -631,7 +693,7 @@ function App({offline}){
 
       <main className="main">
         <header className="topbar">
-          <div className="breadcrumb"><span>Green Cross</span><span>›</span><b>{nav.find(n=>n.id===view)?.label||view}</b></div>
+          <div className="breadcrumb"><span>{shop.name}</span><span>›</span><b>{nav.find(n=>n.id===view)?.label||view}</b></div>
           <div className="top-actions">
             <OfflineChip status={offline.status} online={online}/>
             <span className="today"><Clock3 size={14}/>{fullDate()}</span>
@@ -666,18 +728,22 @@ function App({offline}){
         </header>
 
         <div className="page">
-          {view==='dashboard' && isOwner && <DashboardOwner sales={sales} todaySales={todaySales} products={products} customers={customers} employees={employees} activities={activities} messages={messages} giftCards={giftCards} expenses={expenses} setView={setView} onRestock={(p)=>setStockModal({product:p,mode:'restock'})} />}
+          {view==='dashboard' && isOwner && <DashboardOwner sales={sales} todaySales={todaySales} products={products} customers={customers} employees={employees} activities={activities} messages={messages} giftCards={giftCards} expenses={expenses} maintenance={maintenance} setView={setView} onRestock={(p)=>setStockModal({product:p,mode:'restock'})} />}
           {view==='pos' && <POSPage
             products={filteredProducts} allProducts={products} categories={categories} cat={cat} setCat={setCat}
             search={search} setSearch={setSearch} cart={cart} setCart={setCart} addToCart={addToCart} updateQty={updateQty} removeFromCart={removeFromCart}
             customers={customers} selectedCustomerId={selectedCustomerId} setSelectedCustomerId={setSelectedCustomerId}
             subtotal={subtotal} discount={discount} total={total} itemCount={itemCount} discountOn={discountOn} setDiscountOn={setDiscountOn}
             showPay={showPay} setShowPay={setShowPay} mobileCart={mobileCart} setMobileCart={setMobileCart}
-            completeSale={completeSale} giftCards={giftCards} isOwner={isOwner}
+            completeSale={completeSale} giftCards={giftCards} isOwner={isOwner} discountPercent={discountPercent}
             onAddProduct={()=>{setEditingProduct(null);setShowProductModal(true)}}
           />}
           {view==='inventory' && <InventoryPage products={products} setProducts={setProducts} search={search} setSearch={setSearch} cat={cat} setCat={setCat} categories={categories} isOwner={isOwner} stockMoves={stockMoves} onEdit={(p)=>{setEditingProduct(p);setShowProductModal(true)}} onDelete={deleteProduct} onAdd={()=>{setEditingProduct(null);setShowProductModal(true)}} onStock={(p,mode)=>setStockModal({product:p,mode})} />}
           {view==='customers' && <CustomersPage customers={customers} sales={sales} isOwner={isOwner} onEdit={(c)=>{setEditingCustomer(c);setShowCustomerModal(true)}} onAdd={()=>{setEditingCustomer(null);setShowCustomerModal(true)}} onPayAccount={payAccount} />}
+          {view==='leads' && isOwner && <LeadsPage customers={customers} sales={sales} products={products} onStartSale={(customer)=>{setSelectedCustomerId(customer.id);setView('pos')}} />}
+          {view==='maintenance' && isOwner && <MaintenancePage records={maintenance} onSave={saveMaintenance} onComplete={completeMaintenance} onDelete={deleteMaintenance} />}
+          {view==='timeline' && isOwner && <TimelinePage activities={activities} sales={sales} stockMoves={stockMoves} expenses={expenses} maintenance={maintenance} messages={messages} />}
+          {view==='settings' && isOwner && <SettingsPage settings={settings} onSave={saveSettings} onExportBackup={exportShopData} onChangePassword={()=>setShowMyPassword(true)} offlineStatus={offline.status} counts={{Products:products.length,Sales:sales.length,Customers:customers.filter(c=>!c.isWalkIn).length,Staff:employees.length,Expenses:expenses.length,Maintenance:maintenance.length}} />}
           {view==='invoices' && <InvoicesPage sales={visibleSales} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} employees={employees} />}
           {view==='expenses' && isOwner && <ExpensesPage expenses={expenses} onEdit={(e)=>{setEditingExpense(e);setShowExpenseModal(true)}} onAdd={()=>{setEditingExpense(null);setShowExpenseModal(true)}} onDelete={deleteExpense} />}
           {view==='gift' && isOwner && <GiftAccountPage giftCards={giftCards} customers={customers} sales={sales} onAdd={()=>setShowGiftModal(true)} onPayAccount={payAccount} />}
@@ -688,14 +754,21 @@ function App({offline}){
 
         <button className="fab" onClick={()=>setMobileCart(true)}><ShoppingCart size={18}/> View sale <span style={{background:'#ffffff22',padding:'2px 8px',borderRadius:'20px'}}>{itemCount}</span> <b>{format(total)}</b></button>
         <nav className="mnav">
-          {nav.slice(0,5).map(n=>(
-            <button key={n.id} className={view===n.id?'active':''} onClick={()=>setView(n.id)}><n.icon size={18}/><span>{n.label}</span></button>
+          {nav.slice(0,4).map(n=>(
+            <button key={n.id} className={view===n.id?'active':''} onClick={()=>{setView(n.id);setMobileMore(false)}}><n.icon size={18}/><span>{n.id==='inventory'?'Stock':n.id==='leads'?'Leads':n.label}</span></button>
           ))}
+          <button className={mobileMore || !nav.slice(0,4).some(n=>n.id===view)?'active':''} onClick={()=>setMobileMore(true)}><MoreHorizontal size={18}/><span>More</span></button>
         </nav>
       </main>
 
+      {mobileMore && <div className="backdrop mobile-more-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setMobileMore(false)}}>
+        <div className="mobile-more-sheet"><div className="mobile-more-head"><div><b>POSI workspaces</b><small>Choose where you want to go</small></div><button className="btn icon small" onClick={()=>setMobileMore(false)}><X size={15}/></button></div>
+          <div className="mobile-more-grid">{nav.map(n=><button key={n.id} className={view===n.id?'active':''} onClick={()=>{setView(n.id);setMobileMore(false)}}><n.icon size={19}/><span>{n.label}</span>{n.id==='inventory'&&lowStockItems.length>0&&<i>{lowStockItems.length}</i>}</button>)}</div>
+        </div>
+      </div>}
+
       {/* Modals */}
-      {showProductModal && <ProductModal product={editingProduct} categories={categories.filter(c=>c!=='All')} onClose={()=>{setShowProductModal(false);setEditingProduct(null)}} onSave={saveProduct} />}
+      {showProductModal && <ProductModal product={editingProduct} categories={categories.filter(c=>c!=='All')} defaultLowStock={settings.defaultLowStock??5} onClose={()=>{setShowProductModal(false);setEditingProduct(null)}} onSave={saveProduct} />}
       {showCustomerModal && <CustomerModal customer={editingCustomer} onClose={()=>{setShowCustomerModal(false);setEditingCustomer(null)}} onSave={saveCustomer} />}
       {showEmployeeModal && <EmployeeModal employee={editingEmployee} employees={employees} onClose={()=>{setShowEmployeeModal(false);setEditingEmployee(null)}} onSave={saveEmployee} />}
       {credentialsFor && <CredentialsModal employee={credentialsFor} employees={employees} onClose={()=>setCredentialsFor(null)} onSave={saveCredentials} />}
@@ -706,8 +779,8 @@ function App({offline}){
       {stockModal && <StockModal stock={stockModal} onClose={()=>setStockModal(null)} onSave={applyStockChange} />}
       {staffSales && <StaffSalesModal employee={staffSales} sales={sales} onClose={()=>setStaffSales(null)} onViewInvoice={(s)=>{setStaffSales(null);setSelectedInvoice(s)}} onViewReceipt={(s)=>{setStaffSales(null);setSelectedReceipt(s)}} />}
       {showPay && <PaymentModal cart={cart} subtotal={subtotal} discount={discount} total={total} customer={selectedCustomer} giftCards={giftCards} onClose={()=>setShowPay(false)} onComplete={completeSale} />}
-      {selectedInvoice && <InvoiceModal sale={selectedInvoice} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} />}
-      {selectedReceipt && <ReceiptModal sale={selectedReceipt} onClose={()=>setSelectedReceipt(null)} />}
+      {selectedInvoice && <InvoiceModal sale={selectedInvoice} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} />}
+      {selectedReceipt && <ReceiptModal sale={selectedReceipt} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedReceipt(null)} />}
       {toast && <div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
       {success && <div className="success"><span style={{width:'32px',height:'32px',borderRadius:'50%',background:'#ecfdf5',color:'#065f46',display:'grid',placeItems:'center'}}><Check size={16}/></span><span><b>Sale invoiced!</b><small>{success.invoiceNumber} · {format(success.total)}</small></span><button className="btn small primary" onClick={()=>{setSelectedReceipt(success);setSuccess(null)}}><Printer size={14}/>Print receipt</button><button className="btn small" onClick={()=>{setSelectedInvoice(success);setSuccess(null)}}><FileText size={14}/>Invoice</button><button className="btn icon small" onClick={()=>setSuccess(null)}><X size={14}/></button></div>}
     </div>
@@ -716,7 +789,7 @@ function App({offline}){
 
 // Components
 
-function LoginScreen({onSignIn}){
+function LoginScreen({onSignIn,shop=SHOP}){
   const [username,setUsername]=useState('');
   const [password,setPassword]=useState('');
   const [showPassword,setShowPassword]=useState(false);
@@ -747,7 +820,7 @@ function LoginScreen({onSignIn}){
       </div>
       <div className="login-right">
         <form className="login-card" onSubmit={submit}>
-          <span style={{fontSize:'10px',fontWeight:800,letterSpacing:'1px',color:'#0f766e'}}>GREEN CROSS DRUG STORE · ACCRA</span>
+          <span style={{fontSize:'10px',fontWeight:800,letterSpacing:'1px',color:'#0f766e'}}>{shop.name.toUpperCase()} · {shop.address}</span>
           <h2 style={{margin:'8px 0 4px',fontSize:'24px',fontWeight:900}}>Sign in to POSI</h2>
           <p style={{margin:0,color:'#6b7d76',fontSize:'13px'}}>Use the username and password the owner created for you. Accounts cannot be self-registered.</p>
 
@@ -778,11 +851,13 @@ function LoginScreen({onSignIn}){
   );
 }
 
-function DashboardOwner({sales,todaySales,products,customers,employees,activities,messages,giftCards,expenses,setView,onRestock}){
+function DashboardOwner({sales,todaySales,products,customers,employees,activities,messages,giftCards,expenses,maintenance,setView,onRestock}){
   const lowStock = products.filter(p=>p.stock<=reorderOf(p)).sort((a,b)=>a.stock-b.stock);
   const todayExpenses = expenses.filter(e=>e.date===todayKey());
   const todayExpenseTotal = todayExpenses.reduce((s,e)=>s+Number(e.amount||0),0);
   const totalToday = todaySales.reduce((s,x)=>s+Number(x.total||0),0);
+  const yesterdayTotal = sales.filter(s=>s.date===daysAgo(1)).reduce((s,x)=>s+Number(x.total||0),0);
+  const dailyChange = yesterdayTotal ? ((totalToday-yesterdayTotal)/yesterdayTotal*100) : null;
   const weekSales = sales.filter(s=>{ const d=new Date(); d.setDate(d.getDate()-7); return s.date>=d.toISOString().slice(0,10) });
   const weekTotal = weekSales.reduce((s,x)=>s+Number(x.total||0),0);
   const accountReceivable = customers.reduce((s,c)=>s+Number(c.balance||0),0);
@@ -795,13 +870,21 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
   const topProducts = (()=>{ const m=new Map(); sales.forEach(s=>s.items?.forEach(it=>{ const cur=m.get(it.name)||{name:it.name,qty:0,rev:0}; cur.qty+=it.qty; cur.rev+=it.lineTotal; m.set(it.name,cur)})); return [...m.values()].sort((a,b)=>b.qty-a.qty).slice(0,5) })();
 
   const combinedTotal = sales.reduce((s,x)=>s+Number(x.total||0),0);
+  const upcomingMaintenance = maintenance.filter(m=>m.status!=='completed').sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,4);
+  const maintenanceAttention = maintenance.filter(m=>m.status!=='completed' && m.dueDate<=todayKey()).length;
+  const customerLeadPreview = customers.filter(c=>!c.isWalkIn).map(c=>{
+    const bought = new Map();
+    sales.filter(s=>s.customerId===c.id).forEach(s=>s.items?.forEach(it=>bought.set(it.name,(bought.get(it.name)||0)+Number(it.qty||0))));
+    const favourite = [...bought.entries()].sort((a,b)=>b[1]-a[1])[0];
+    return {customer:c,favourite};
+  }).filter(x=>x.favourite).sort((a,b)=>Number(b.customer.totalSpent||0)-Number(a.customer.totalSpent||0)).slice(0,4);
 
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> OWNER OVERVIEW · {fullDate().toUpperCase()}</div><h1>Drug store overview — combined accounts</h1><p>All cashier sales, money owed, and inventory combined to owner. Monitor cash, MoMo and gift sales at a glance.</p></div><button className="btn primary" onClick={()=>setView('pos')}><ShoppingCart size={16}/> New Sale</button></div>
+      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> OWNER OVERVIEW · {fullDate().toUpperCase()}</div><h1>Your shop, at a glance</h1><p>Sales, customers, stock and equipment in one owner command centre. All cashier activity is combined here.</p></div><div className="dashboard-actions"><button className="btn" onClick={()=>setView('timeline')}><History size={15}/> Timeline</button><button className="btn" onClick={()=>setView('maintenance')}><Wrench size={15}/> Maintenance{maintenanceAttention>0&&<span className="button-count">{maintenanceAttention}</span>}</button><button className="btn primary" onClick={()=>setView('pos')}><ShoppingCart size={16}/> New Sale</button></div></div>
 
       <div className="grid metrics" style={{marginBottom:'14px'}}>
-        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><Wallet size={16}/></div><span style={{fontSize:'10px',fontWeight:800,color:'#065f46',background:'#ecfdf5',padding:'3px 7px',borderRadius:'20px'}}>TODAY</span></div><div className="metric-label">Sales today (combined)</div><div className="metric-value">{format(totalToday)}</div><div className="metric-note"><em><TrendingUp size={12}/>+12%</em> {todaySales.length} transactions from all cashiers</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><Wallet size={16}/></div><span style={{fontSize:'10px',fontWeight:800,color:'#065f46',background:'#ecfdf5',padding:'3px 7px',borderRadius:'20px'}}>TODAY</span></div><div className="metric-label">Sales today (combined)</div><div className="metric-value">{format(totalToday)}</div><div className="metric-note">{dailyChange!==null&&<em>{dailyChange>=0?<TrendingUp size={12}/>:<TrendingDown size={12}/>} {dailyChange>=0?'+':''}{dailyChange.toFixed(0)}%</em>} {todaySales.length} transactions from all cashiers</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><DollarSign size={16}/></div></div><div className="metric-label">Total combined revenue</div><div className="metric-value">{format(combinedTotal)}</div><div className="metric-note">All payment methods combined to owner</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><PiggyBank size={16}/></div></div><div className="metric-label">Money owed by customers</div><div className="metric-value">{format(accountReceivable)}</div><div className="metric-note">{customers.filter(c=>c.balance>0).length} customers owe</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon violet"><Gift size={16}/></div></div><div className="metric-label">Gift card liability</div><div className="metric-value">{format(giftLiability)}</div><div className="metric-note">{giftCards.filter(g=>g.status==='active').length} active cards</div></div>
@@ -853,7 +936,7 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
         </div>
 
         <div className="card">
-          <h2>Recent activity</h2><p className="sub">Latest shop updates</p>
+          <div className="section-head"><div><h2>Recent activity</h2><p className="sub">Latest shop updates</p></div><button className="btn small ghost" onClick={()=>setView('timeline')}>Full timeline <ArrowRight size={13}/></button></div>
           <div style={{marginTop:'10px',display:'flex',flexDirection:'column',gap:'8px'}}>
             {activities.slice(0,5).map(a=><div key={a.id} style={{display:'flex',gap:'8px',alignItems:'center'}}><div style={{width:'28px',height:'28px',borderRadius:'8px',background:'#e6f4f1',display:'grid',placeItems:'center',color:'#0f766e'}}><ShoppingCart size={14}/></div><div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px',display:'block',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{a.title}</b><small style={{fontSize:'11px',color:'#6b7d76'}}>{a.detail}</small></div><small style={{fontSize:'10px',color:'#94a8a1'}}>{a.time}</small></div>)}
           </div>
@@ -865,12 +948,22 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
             {topProducts.length? topProducts.map((p,i)=><div key={p.name} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 0',borderTop:'1px solid #f1f5f1'}}><span style={{width:'22px',height:'22px',borderRadius:'6px',background:'#ecfdf5',display:'grid',placeItems:'center',fontSize:'10px',fontWeight:800,color:'#065f46'}}>{String(i+1).padStart(2,'0')}</span><span style={{flex:1}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.qty} sold</small></span><b style={{fontSize:'12px'}}>{format(p.rev)}</b></div>) : <div className="empty-state"><b>No sales yet</b><small>Top products will appear after sales</small></div>}
           </div>
         </div>
+
+        <div className="card">
+          <div className="section-head"><div><h2>Customer purchase leads</h2><p className="sub">What your most valuable customers mostly buy</p></div><button className="btn small ghost" onClick={()=>setView('leads')}>View leads <ArrowRight size={13}/></button></div>
+          <div className="dashboard-lead-list">{customerLeadPreview.length?customerLeadPreview.map(({customer,favourite})=><button key={customer.id} onClick={()=>setView('leads')}><div className="avatar cashier">{initials(customer.name)}</div><span><b>{customer.name}</b><small>Mostly buys {favourite[0]} · {favourite[1]} units</small></span><strong>{format(customer.totalSpent)}</strong></button>):<div className="empty-state compact"><Users size={18}/><b>No named-customer purchases yet</b><small>Purchase preferences will appear after checkout.</small></div>}</div>
+        </div>
+
+        <div className="card">
+          <div className="section-head"><div><h2>Maintenance schedule</h2><p className="sub">Upcoming and overdue equipment care</p></div><button className="btn small ghost" onClick={()=>setView('maintenance')}>Manage <ArrowRight size={13}/></button></div>
+          <div className="dashboard-maintenance-list">{upcomingMaintenance.length?upcomingMaintenance.map(m=><button key={m.id} onClick={()=>setView('maintenance')}><span className={`dashboard-maintenance-icon ${m.dueDate<todayKey()?'overdue':''}`}><Wrench size={14}/></span><span><b>{m.asset}</b><small>{m.title}</small></span><span><b>{m.dueDate<todayKey()?'Overdue':readableDate(m.dueDate)}</b><small>{m.vendor||'In-house'}</small></span></button>):<div className="empty-state compact"><CheckCircle2 size={18}/><b>No open maintenance</b><small>New service plans will appear here.</small></div>}</div>
+        </div>
       </div>
     </div>
   );
 }
 
-function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,cart,setCart,addToCart,updateQty,removeFromCart,customers,selectedCustomerId,setSelectedCustomerId,subtotal,discount,total,itemCount,discountOn,setDiscountOn,showPay,setShowPay,mobileCart,setMobileCart,completeSale,giftCards,onAddProduct,isOwner}){
+function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,cart,setCart,addToCart,updateQty,removeFromCart,customers,selectedCustomerId,setSelectedCustomerId,subtotal,discount,total,itemCount,discountOn,setDiscountOn,showPay,setShowPay,mobileCart,setMobileCart,completeSale,giftCards,onAddProduct,isOwner,discountPercent}){
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> POINT OF SALE</div><h1>Make a sale — Cash, MoMo &amp; Gift</h1><p>Fast drug store checkout. Select customer, add items, choose payment. All sales combine to the owner.</p></div><div className="kpi-row"><span className="kpi"><Package size={14}/> {allProducts.length} items</span><span className="kpi"><Users size={14}/> {customers.length-1} customers</span></div></div>
@@ -921,13 +1014,13 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
           </div>
 
           <div style={{padding:'10px 14px',borderTop:'1px solid #e7ece8',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',fontWeight:600}}><input type="checkbox" checked={discountOn} onChange={e=>setDiscountOn(e.target.checked)}/> Apply 10% discount</label>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',fontWeight:600}}><input type="checkbox" checked={discountOn} onChange={e=>setDiscountOn(e.target.checked)}/> Apply {discountPercent}% discount</label>
             <span style={{fontSize:'11px',color:'#6b7d76'}}>{discountOn?`-${format(discount)}`:''}</span>
           </div>
 
           <div className="totals">
             <div className="totals-row"><span>Subtotal</span><b>{format(subtotal)}</b></div>
-            {discountOn && <div className="totals-row" style={{color:'#0f766e'}}><span>Discount 10%</span><b>-{format(discount)}</b></div>}
+            {discountOn && <div className="totals-row" style={{color:'#0f766e'}}><span>Discount {discountPercent}%</span><b>-{format(discount)}</b></div>}
             <div className="totals-row total"><span>Total due</span><b>{format(total)}</b></div>
           </div>
 
@@ -1557,8 +1650,8 @@ function ExpenseModal({expense,onClose,onSave,employees}){
   );
 }
 
-function ProductModal({product,categories,onClose,onSave}){
-  const [form,setForm]=useState(product||{name:'',sku:'',category:categories[0]||'Groceries',brand:'',price:'',cost:'',stock:'',barcode:'',supplier:'',lowStockAt:5});
+function ProductModal({product,categories,defaultLowStock=5,onClose,onSave}){
+  const [form,setForm]=useState(product||{name:'',sku:'',category:categories[0]||'Groceries',brand:'',price:'',cost:'',stock:'',barcode:'',supplier:'',lowStockAt:defaultLowStock});
   const [err,setErr]=useState('');
   const submit = (e)=>{
     e.preventDefault();
@@ -1851,11 +1944,11 @@ function PaymentModal({cart,subtotal,discount,total,customer,giftCards,onClose,o
   );
 }
 
-function InvoiceModal({sale,onClose,onPrintReceipt}){
+function InvoiceModal({sale,shop=SHOP,receiptFooter='',onClose,onPrintReceipt}){
   const subtotal = sale.subtotal||sale.total;
   return (
     <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
-      <div className="invoice"><div className="invoice-head"><div style={{display:'flex',alignItems:'center',gap:'10px'}}><div className="brand-mark" style={{width:'32px',height:'32px',fontSize:'14px'}}>P</div><div><b>{SHOP.name}</b><small style={{display:'block',fontSize:'11px',color:'#6b7d76'}}>{SHOP.address} · Tel {SHOP.phone} · Customer Invoice</small></div></div><button className="btn icon small no-print" onClick={onClose}><X size={14}/></button></div>
+      <div className="invoice"><div className="invoice-head"><div style={{display:'flex',alignItems:'center',gap:'10px'}}><div className="brand-mark" style={{width:'32px',height:'32px',fontSize:'14px'}}>P</div><div><b>{shop.name}</b><small style={{display:'block',fontSize:'11px',color:'#6b7d76'}}>{shop.address} · Tel {shop.phone} · Customer Invoice</small></div></div><button className="btn icon small no-print" onClick={onClose}><X size={14}/></button></div>
         <div className="invoice-body">
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><span style={{fontSize:'10px',fontWeight:800,letterSpacing:'1px',color:'#0f766e'}}>PAID INVOICE</span><h2 style={{margin:'4px 0',fontSize:'20px',fontWeight:900}}>{sale.invoiceNumber}</h2><small style={{color:'#6b7d76'}}>{readableDate(sale.date)} at {sale.time}</small></div><span className="status ok"><i/> Paid · {sale.payment}</span></div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',margin:'14px 0',padding:'10px',background:'#f9fbf9',border:'1px solid #e7ece8',borderRadius:'8px',fontSize:'11px'}}><div><small style={{color:'#6b7d76',fontWeight:700}}>BILL TO</small><b style={{display:'block'}}>{sale.customerName}</b></div><div><small style={{color:'#6b7d76',fontWeight:700}}>SELLER NAME</small><b style={{display:'block'}}>{sale.cashier}</b></div><div><small style={{color:'#6b7d76',fontWeight:700}}>PAYMENT</small><b style={{display:'block'}}>{sale.payment} {sale.paymentDetail?.phone||sale.paymentDetail?.code||''}</b></div></div>
@@ -1863,17 +1956,17 @@ function InvoiceModal({sale,onClose,onPrintReceipt}){
           {sale.items?.map((it,i)=><div key={i} className="invoice-line"><span>{it.name}</span><span>{it.qty}</span><span>{format(it.unitPrice)}</span><span>{format(it.lineTotal)}</span></div>)}
           <div className="invoice-tot"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{sale.discount>0 && <div><span>Discount</span><b>-{format(sale.discount)}</b></div>}<div className="grand"><span>Total paid</span><b>{format(sale.total)}</b></div></div>
         </div>
-        <div style={{padding:'12px 20px',borderTop:'1px solid #e7ece8',background:'#fcfdfc',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'11px',color:'#6b7d76',display:'flex',alignItems:'center',gap:'5px'}}><ShieldCheck size={12}/> Thank you for shopping with {SHOP.name}!</span><div style={{display:'flex',gap:'6px'}}><button className="btn small no-print" onClick={()=>onPrintReceipt(sale)}><Printer size={14}/> Print receipt</button><button className="btn small primary no-print" onClick={()=>window.print()}><Printer size={14}/> Print invoice</button></div></div>
+        <div style={{padding:'12px 20px',borderTop:'1px solid #e7ece8',background:'#fcfdfc',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'11px',color:'#6b7d76',display:'flex',alignItems:'center',gap:'5px'}}><ShieldCheck size={12}/> {receiptFooter || `Thank you for shopping with ${shop.name}!`}</span><div style={{display:'flex',gap:'6px'}}><button className="btn small no-print" onClick={()=>onPrintReceipt(sale)}><Printer size={14}/> Print receipt</button><button className="btn small primary no-print" onClick={()=>window.print()}><Printer size={14}/> Print invoice</button></div></div>
       </div>
     </div>
   );
 }
 
-function ReceiptModal({sale,onClose}){
+function ReceiptModal({sale,shop=SHOP,receiptFooter='',onClose}){
   return (
     <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
       <div className="receipt"><button className="btn icon small no-print" style={{float:'right'}} onClick={onClose}><X size={14}/></button>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',paddingBottom:'10px',borderBottom:'1px dashed #e7ece8'}}><div className="brand-mark" style={{width:'28px',height:'28px',fontSize:'12px'}}>P</div><div><b style={{fontSize:'12px'}}>{SHOP.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{SHOP.address}</small><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>Tel: {SHOP.phone}</small></div></div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',paddingBottom:'10px',borderBottom:'1px dashed #e7ece8'}}><div className="brand-mark" style={{width:'28px',height:'28px',fontSize:'12px'}}>P</div><div><b style={{fontSize:'12px'}}>{shop.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{shop.address}</small><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>Tel: {shop.phone}</small></div></div>
         <h3>PAYMENT RECEIPT</h3><small>Receipt no: {sale.invoiceNumber}</small>
         <div className="receipt-meta">
           <div><small>SELLER NAME</small><b>{sale.cashier}</b></div>
@@ -1886,7 +1979,7 @@ function ReceiptModal({sale,onClose}){
         {sale.items?.map((it,i)=><div key={i} className="receipt-item"><span>{it.name} × {it.qty}</span><b>{format(it.lineTotal)}</b></div>)}
         {sale.discount>0 && <div className="receipt-item"><span>Discount</span><b>-{format(sale.discount)}</b></div>}
         <div className="receipt-total"><span>Total amount</span><b>{format(sale.total)}</b></div>
-        <div style={{textAlign:'center',marginTop:'12px'}}><small>Thank you for shopping with {SHOP.name}!</small><br/><small>Sale ref {sale.id}</small><br/><button className="btn small primary no-print" style={{marginTop:'8px'}} onClick={()=>window.print()}><Printer size={14}/> Print receipt</button></div>
+        <div style={{textAlign:'center',marginTop:'12px'}}><small>{receiptFooter || `Thank you for shopping with ${shop.name}!`}</small><br/><small>Sale ref {sale.id}</small><br/><button className="btn small primary no-print" style={{marginTop:'8px'}} onClick={()=>window.print()}><Printer size={14}/> Print receipt</button></div>
       </div>
     </div>
   );
