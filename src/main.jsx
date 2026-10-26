@@ -76,6 +76,43 @@ const itemCostOf = (it, products) => {
 const saleCost = (sale, products) => (sale?.items||[]).reduce((s,it)=>s+itemCostOf(it,products)*Number(it.qty||0),0);
 const saleProfit = (sale, products) => (sale?.items||[]).reduce((s,it)=>s+(Number(it.unitPrice||0)-itemCostOf(it,products))*Number(it.qty||0),0);
 
+// Per-product rollup of the stock movement log: for every product it sums the
+// units, unit cost, value at cost and profit of each movement type (sale,
+// restock in, adjustment) plus what the Stock / ± Adj / Edit actions did.
+const emptyMoveBucket = () => ({ count:0, units:0, value:0, profit:0, costSum:0 });
+const stockRollupFor = (products, stockMoves, ids)=>{
+  const wanted = ids ? new Set(ids) : null;
+  const rows = new Map();
+  (products||[]).forEach(p=>{
+    if(wanted && !wanted.has(p.id)) return;
+    rows.set(p.id,{
+      product:p,
+      sale:emptyMoveBucket(), restock:emptyMoveBucket(), adjustment:emptyMoveBucket(),
+      actions:{ stockUnits:0, stockClicks:0, adjUnits:0, adjClicks:0, edits:Number(p.edits||0) },
+      moves:0,
+    });
+  });
+  (stockMoves||[]).forEach(m=>{
+    const row = rows.get(m.productId);
+    if(!row) return;
+    const qty = Number(m.qty||0);
+    const unitCost = Number(m.cost ?? row.product.cost ?? 0);
+    const unitPrice = Number(m.unitPrice ?? row.product.price ?? 0);
+    const bucket = row[m.type] || row.adjustment;
+    bucket.count += 1;
+    bucket.units += qty;
+    bucket.value += unitCost*qty;
+    bucket.costSum += unitCost;
+    if(m.type==='sale') bucket.profit += (unitPrice-unitCost)*Math.abs(qty);
+    if(m.type==='restock'){ row.actions.stockUnits += Math.abs(qty); row.actions.stockClicks += 1 }
+    if(m.type==='adjustment'){ row.actions.adjUnits += qty; row.actions.adjClicks += 1 }
+    row.moves += 1;
+  });
+  return [...rows.values()];
+};
+const moveTypeLabel = (k)=> k==='sale' ? 'Sale' : k==='restock' ? 'Restock in' : 'Adjustment';
+const bucketAvgCost = (b)=> b.units ? (b.value/b.units) : 0;
+
 // 'expired' | 'soon' | 'ok' | 'none' — drives badges, filters and alerts.
 const expiryOf = (p) => {
   const days = daysToExpiry(p);
@@ -1409,6 +1446,32 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
     return t;
   },{stockUnits:0,stockClicks:0,adjUnits:0,adjClicks:0,salesUnits:0,sales:0});
   const editTotal = filtered.reduce((t,p)=>t+Number(p.edits||0),0);
+  // Product movement summary: PRODUCT / TYPE / QTY / UNIT COST / VALUE AT COST /
+  // PROFIT for every product, with the Stock / ± Adj / Edit totals summed on
+  // each product's subtotal line and again in the grand totals row.
+  const [showMoveSummary,setShowMoveSummary]=useState(true);
+  const [onlyWithMoves,setOnlyWithMoves]=useState(false);
+  const movementAll = stockRollupFor(products, stockMoves, filtered.map(p=>p.id));
+  const movementSummary = onlyWithMoves ? movementAll.filter(row=>row.moves>0) : movementAll;
+  const rowsWithMoves = movementAll.filter(row=>row.moves>0).length;
+  const moveTotalsRow = movementSummary.reduce((t,row)=>{
+    ['sale','restock','adjustment'].forEach(k=>{
+      const b = row[k];
+      t[k].count += b.count; t[k].units += b.units; t[k].value += b.value; t[k].profit += b.profit; t[k].costSum += b.costSum;
+    });
+    t.stockUnits += row.actions.stockUnits; t.stockClicks += row.actions.stockClicks;
+    t.adjUnits += row.actions.adjUnits; t.adjClicks += row.actions.adjClicks;
+    t.edits += row.actions.edits;
+    t.moves += row.moves;
+    t.unitCostSum += Number(row.product.cost||0);
+    t.onHand += Number(row.product.stock||0);
+    return t;
+  },{sale:emptyMoveBucket(),restock:emptyMoveBucket(),adjustment:emptyMoveBucket(),stockUnits:0,stockClicks:0,adjUnits:0,adjClicks:0,edits:0,moves:0,unitCostSum:0,onHand:0});
+  const moveNetQty = moveTotalsRow.sale.units + moveTotalsRow.restock.units + moveTotalsRow.adjustment.units;
+  const moveNetValue = moveTotalsRow.sale.value + moveTotalsRow.restock.value + moveTotalsRow.adjustment.value;
+  const moveSaleRevenue = movementSummary.reduce((s,row)=>s+Math.abs(row.sale.value)+row.sale.profit,0);
+  const moveProfitMargin = moveSaleRevenue ? (moveTotalsRow.sale.profit/moveSaleRevenue*100) : 0;
+  const money = (n)=> n>0 ? `+${format(n)}` : n<0 ? `-${format(Math.abs(n))}` : format(0);
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><Package size={12}/> {isOwner?'STOCK & ITEM LIST':'ITEM LIST'}</div><h1>{isOwner?'Stock management & item records':'Item list'}</h1>{!isOwner && <p>Browse products, prices and availability. Cost, profit and reorder tracking are managed by the owner.</p>}</div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
@@ -1478,6 +1541,68 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
         {filtered.length===0 && <div className="empty-state"><b>No items</b><small>Try different filter</small></div>}
         <div style={{display:'flex',justifyContent:'space-between',padding:'10px 2px 2px',fontSize:'11px',color:'#6b7d76'}}><span>Showing {filtered.length} of {products.length}</span><span>{isOwner?'Owner controls inventory':'Owner controls product records'}</span></div>
       </div>
+
+      {isOwner && <div className="card" style={{marginTop:'14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',gap:'8px',flexWrap:'wrap'}}>
+          <div><h2>Product movement summary</h2><p className="sub">Every product with its movement type, units, unit cost, value at cost and profit — plus the Stock, ± Adj and Edit totals summed for each product</p></div>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+            <button className={`btn small ${onlyWithMoves?'primary':'ghost'}`} onClick={()=>setOnlyWithMoves(v=>!v)} title="Show only products with stock movements">{onlyWithMoves?'All products':`Only with moves (${rowsWithMoves})`}</button>
+            <button className="btn small" onClick={()=>setShowMoveSummary(v=>!v)}>{showMoveSummary?'Hide':'Show'} summary</button>
+          </div>
+        </div>
+        {showMoveSummary && <>
+          <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>TYPE</th><th>QTY</th><th>UNIT COST</th><th>VALUE AT COST</th><th>PROFIT</th><th>STOCK</th><th>± ADJ</th><th>EDITS</th></tr></thead><tbody>
+            {movementSummary.map(row=>{
+              const types = ['sale','restock','adjustment'].filter(k=>row[k].count>0);
+              const netQty = row.sale.units + row.restock.units + row.adjustment.units;
+              const netValue = row.sale.value + row.restock.value + row.adjustment.value;
+              const costSum = row.sale.costSum + row.restock.costSum + row.adjustment.costSum;
+              return [
+                ...types.map(k=>{
+                  const b = row[k];
+                  return <tr key={`${row.product.id}-${k}`} style={{background:'#fcfdfc'}}>
+                    <td style={{paddingLeft:'18px',color:'#6b7d76',fontSize:'12px'}}>{row.product.name}</td>
+                    <td><span className={`status ${k==='restock'?'info':k==='sale'?'ok':'warn'}`}><i/>{moveTypeLabel(k)}</span></td>
+                    <td><b style={{color:b.units>0?'#065f46':'#991b1b'}}>{b.units>0?`+${b.units}`:b.units}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>{b.count} move{b.count===1?'':'s'}</small></td>
+                    <td>{format(bucketAvgCost(b))}</td>
+                    <td><b style={{color:b.value>0?'#065f46':b.value<0?'#991b1b':'#6b7d76'}}>{money(b.value)}</b></td>
+                    <td>{k==='sale' ? <b style={{color:b.profit>0?'#065f46':b.profit<0?'#991b1b':'#6b7d76'}}>{format(b.profit)}</b> : <span style={{color:'#94a8a1',fontSize:'11px'}}>—</span>}</td>
+                    <td style={{color:'#cbd5d1'}}>·</td><td style={{color:'#cbd5d1'}}>·</td><td style={{color:'#cbd5d1'}}>·</td>
+                  </tr>
+                }),
+                <tr key={`${row.product.id}-sum`} style={{background:'#f6faf8',borderTop:'1px solid #e7ece8'}}>
+                  <td><b style={{fontSize:'12px'}}>{row.product.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>subtotal · {row.moves} move{row.moves===1?'':'s'} · {row.product.stock} in stock</small></td>
+                  <td><b style={{fontSize:'11px',color:'#0f766e'}}>Product total</b></td>
+                  <td><b style={{color:netQty>0?'#065f46':netQty<0?'#991b1b':'#6b7d76'}}>{netQty>0?`+${netQty}`:netQty}</b></td>
+                  <td><b>{format(costSum)}</b></td>
+                  <td><b style={{color:netValue>0?'#065f46':netValue<0?'#991b1b':'#6b7d76'}}>{money(netValue)}</b></td>
+                  <td><b style={{color:row.sale.profit>0?'#065f46':row.sale.profit<0?'#991b1b':'#6b7d76'}}>{format(row.sale.profit)}</b></td>
+                  <td><b style={{color:'#1e40af',fontSize:'11px'}}>+{row.actions.stockUnits}<small style={{color:'#6b7d76',fontWeight:600}}> ({row.actions.stockClicks})</small></b></td>
+                  <td><b style={{color:'#92400e',fontSize:'11px'}}>{row.actions.adjUnits>0?'+':''}{row.actions.adjUnits}<small style={{color:'#6b7d76',fontWeight:600}}> ({row.actions.adjClicks})</small></b></td>
+                  <td><b style={{color:row.actions.edits?'#0f766e':'#6b7d76',fontSize:'11px'}}>{row.actions.edits}</b></td>
+                </tr>
+              ];
+            })}
+          </tbody>
+          {movementSummary.length>0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{movementSummary.length} product{movementSummary.length===1?'':'s'} · {moveTotalsRow.moves} moves · {moveTotalsRow.onHand.toLocaleString()} units on hand</small></td>
+            <td style={{fontSize:'10px',lineHeight:1.5,color:'#6b7d76'}}>
+              <span style={{display:'block',fontWeight:800,color:'#065f46'}}>{moveTotalsRow.sale.count} sale{moveTotalsRow.sale.count===1?'':'s'}</span>
+              <span style={{display:'block',fontWeight:800,color:'#1e40af'}}>{moveTotalsRow.restock.count} restock{moveTotalsRow.restock.count===1?'':'s'}</span>
+              <span style={{display:'block',fontWeight:800,color:'#92400e'}}>{moveTotalsRow.adjustment.count} adj</span>
+            </td>
+            <td><b style={{color:moveNetQty>0?'#065f46':moveNetQty<0?'#991b1b':'#6b7d76'}}>{moveNetQty>0?`+${moveNetQty}`:moveNetQty} net</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>in +{moveTotalsRow.restock.units} · out {Math.abs(moveTotalsRow.sale.units+moveTotalsRow.adjustment.units)}</small></td>
+            <td><b>{format(moveTotalsRow.unitCostSum)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>sum of item costs</small></td>
+            <td><b style={{color:moveNetValue>0?'#065f46':moveNetValue<0?'#991b1b':'#6b7d76'}}>{money(moveNetValue)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>sold out {format(Math.abs(moveTotalsRow.sale.value)+Math.abs(moveTotalsRow.adjustment.value))} · in {format(moveTotalsRow.restock.value)}</small></td>
+            <td><b style={{color:moveTotalsRow.sale.profit>0?'#065f46':moveTotalsRow.sale.profit<0?'#991b1b':'#6b7d76'}}>{format(moveTotalsRow.sale.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{moveProfitMargin.toFixed(0)}% margin</small></td>
+            <td><b style={{color:'#1e40af'}}>Stock +{moveTotalsRow.stockUnits}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{moveTotalsRow.stockClicks} click{moveTotalsRow.stockClicks===1?'':'s'}</small></td>
+            <td><b style={{color:'#92400e'}}>±Adj {moveTotalsRow.adjUnits>0?'+':''}{moveTotalsRow.adjUnits}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{moveTotalsRow.adjClicks} click{moveTotalsRow.adjClicks===1?'':'s'}</small></td>
+            <td><b style={{color:'#0f766e'}}>{moveTotalsRow.edits}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>edit{moveTotalsRow.edits===1?'':'s'}</small></td>
+          </tr></tfoot>}
+          </table></div>
+          {movementSummary.length===0 && <div className="empty-state"><Package size={20}/><b>No products match the filters</b><small>Clear the search or category filter to see the movement summary</small></div>}
+        </>}
+      </div>}
 
       {isOwner && <div className="card" style={{marginTop:'14px'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',gap:'8px',flexWrap:'wrap'}}><div><h2>Stock movement log</h2><p className="sub">Every unit in and out — sales, restocks and adjustments, valued at cost price</p></div><div style={{display:'flex',gap:'6px',alignItems:'center'}}>{moveRows.length>15 && <button className="btn small ghost" onClick={()=>setAllMoves(v=>!v)}>{allMoves?`Show latest 15`:`View all ${moveRows.length}`}</button>}<History size={16} color="#6b7d76"/></div></div>
