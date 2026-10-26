@@ -56,6 +56,23 @@ const hoursBetween = (dateKey, inTime, outTime) => {
   return Math.max(0, Number(((b-a)/60).toFixed(2)));
 };
 const reorderOf = (p) => Number(p?.lowStockAt ?? 5);
+// Expiry tracking: items count as "expiring soon" inside this window.
+const EXPIRY_SOON_DAYS = 90;
+const daysToExpiry = (p) => {
+  if(!p?.expiry) return null;
+  const d = new Date(`${p.expiry}T12:00:00`);
+  if(Number.isNaN(d.getTime())) return null;
+  return Math.round((d - new Date(`${todayKey()}T12:00:00`))/86400000);
+};
+// 'expired' | 'soon' | 'ok' | 'none' — drives badges, filters and alerts.
+const expiryOf = (p) => {
+  const days = daysToExpiry(p);
+  if(days===null) return {state:'none', days:null, label:'Not set'};
+  if(days<0) return {state:'expired', days, label:`Expired ${Math.abs(days)}d ago`};
+  if(days===0) return {state:'soon', days, label:'Expires today'};
+  if(days<=EXPIRY_SOON_DAYS) return {state:'soon', days, label:`${days}d left`};
+  return {state:'ok', days, label:`${days}d left`};
+};
 
 const categories = ['All','Pain Relief','Cough & Cold','Antibiotics','Antimalarials','Vitamins','Baby & Mother','Personal Care','First Aid','Devices','Other'];
 const expenseCategories = ['Rent','Utilities','Supplies','Transport','Salaries','Maintenance','Marketing','Other'];
@@ -74,18 +91,18 @@ const paymentMethods = [
 ];
 
 const starterProducts = [
-  { id:'p1', name:'Paracetamol 500mg', sku:'PARA-500', category:'Pain Relief', price:12.5, cost:7, stock:48, barcode:'890123', brand:'20 tablets', supplier:'Ernest Chemists' },
-  { id:'p2', name:'Ibuprofen 400mg', sku:'IBU-400', category:'Pain Relief', price:18, cost:11, stock:28, barcode:'890124', brand:'20 tablets', supplier:'Ernest Chemists' },
-  { id:'p3', name:'Amoxicillin 500mg', sku:'AMOX-500', category:'Antibiotics', price:35, cost:22, stock:24, barcode:'890125', brand:'21 capsules', supplier:'M&G Pharma' },
-  { id:'p4', name:'Coartem 20/120', sku:'COART-24', category:'Antimalarials', price:85, cost:62, stock:19, barcode:'890126', brand:'24 tablets', supplier:'Novartis GH' },
-  { id:'p5', name:'Malaria Test Kit', sku:'MAL-TEST', category:'Devices', price:25, cost:16, stock:7, barcode:'890127', brand:'SD Bioline', supplier:'Lab Supplies Ltd' },
-  { id:'p6', name:'ORS Sachet', sku:'ORS-SACH', category:'First Aid', price:6, cost:3.5, stock:33, barcode:'890128', brand:'Cerlyte', supplier:'Uniliver Ghana' },
-  { id:'p7', name:'Vitamin C 1000mg', sku:'VITC-1000', category:'Vitamins', price:45, cost:32, stock:51, barcode:'890129', brand:'60 tablets', supplier:'Vita Health' },
-  { id:'p8', name:'Digital Thermometer', sku:'THERM-D', category:'Devices', price:42, cost:26, stock:22, barcode:'890130', brand:'CarePlus', supplier:'Lab Supplies Ltd' },
-  { id:'p9', name:'Cough Syrup 100ml', sku:'COUGH-100', category:'Cough & Cold', price:22, cost:14, stock:48, barcode:'890131', brand:'Cofex', supplier:'M&G Pharma' },
-  { id:'p10', name:'Baby Diapers Size 3', sku:'DIAP-3', category:'Baby & Mother', price:65, cost:48, stock:3, barcode:'890132', brand:'Pampers Care', supplier:'Uniliver Ghana' },
-  { id:'p11', name:'Antiseptic Cream 30g', sku:'ANTIS-30', category:'Personal Care', price:24, cost:16, stock:60, barcode:'890133', brand:'Savlon', supplier:'Ernest Chemists' },
-  { id:'p12', name:'First Aid Kit Basic', sku:'AID-KIT', category:'First Aid', price:95, cost:70, stock:15, barcode:'890134', brand:'MediKit', supplier:'Lab Supplies Ltd' },
+  { id:'p1', name:'Paracetamol 500mg', sku:'PARA-500', category:'Pain Relief', price:12.5, cost:7, stock:48, barcode:'890123', brand:'20 tablets', supplier:'Ernest Chemists', expiry:'2027-04-30' },
+  { id:'p2', name:'Ibuprofen 400mg', sku:'IBU-400', category:'Pain Relief', price:18, cost:11, stock:28, barcode:'890124', brand:'20 tablets', supplier:'Ernest Chemists', expiry:'2027-02-28' },
+  { id:'p3', name:'Amoxicillin 500mg', sku:'AMOX-500', category:'Antibiotics', price:35, cost:22, stock:24, barcode:'890125', brand:'21 capsules', supplier:'M&G Pharma', expiry:'2026-12-31' },
+  { id:'p4', name:'Coartem 20/120', sku:'COART-24', category:'Antimalarials', price:85, cost:62, stock:19, barcode:'890126', brand:'24 tablets', supplier:'Novartis GH', expiry:'2027-08-31' },
+  { id:'p5', name:'Malaria Test Kit', sku:'MAL-TEST', category:'Devices', price:25, cost:16, stock:7, barcode:'890127', brand:'SD Bioline', supplier:'Lab Supplies Ltd', expiry:'2026-11-30' },
+  { id:'p6', name:'ORS Sachet', sku:'ORS-SACH', category:'First Aid', price:6, cost:3.5, stock:33, barcode:'890128', brand:'Cerlyte', supplier:'Uniliver Ghana', expiry:'2027-06-30' },
+  { id:'p7', name:'Vitamin C 1000mg', sku:'VITC-1000', category:'Vitamins', price:45, cost:32, stock:51, barcode:'890129', brand:'60 tablets', supplier:'Vita Health', expiry:'2027-09-30' },
+  { id:'p8', name:'Digital Thermometer', sku:'THERM-D', category:'Devices', price:42, cost:26, stock:22, barcode:'890130', brand:'CarePlus', supplier:'Lab Supplies Ltd', expiry:'2029-01-31' },
+  { id:'p9', name:'Cough Syrup 100ml', sku:'COUGH-100', category:'Cough & Cold', price:22, cost:14, stock:48, barcode:'890131', brand:'Cofex', supplier:'M&G Pharma', expiry:'2026-12-15' },
+  { id:'p10', name:'Baby Diapers Size 3', sku:'DIAP-3', category:'Baby & Mother', price:65, cost:48, stock:3, barcode:'890132', brand:'Pampers Care', supplier:'Uniliver Ghana', expiry:'2027-03-31' },
+  { id:'p11', name:'Antiseptic Cream 30g', sku:'ANTIS-30', category:'Personal Care', price:24, cost:16, stock:60, barcode:'890133', brand:'Savlon', supplier:'Ernest Chemists', expiry:'2027-05-31' },
+  { id:'p12', name:'First Aid Kit Basic', sku:'AID-KIT', category:'First Aid', price:95, cost:70, stock:15, barcode:'890134', brand:'MediKit', supplier:'Lab Supplies Ltd', expiry:'2028-12-31' },
 ];
 
 const starterCustomers = [
@@ -520,6 +537,7 @@ function App({offline}){
 
   const addToCart = (product)=>{
     if(product.stock<1){ flash(`${product.name} out of stock`); return }
+    if(expiryOf(product).state==='expired'){ flash(`${product.name} has expired — cannot be sold`); return }
     setCart(prev=>{
       const ex = prev.find(i=>i.id===product.id);
       if(ex){
@@ -856,6 +874,12 @@ function LoginScreen({onSignIn,shop=SHOP}){
 
 function DashboardOwner({sales,todaySales,products,customers,employees,activities,messages,giftCards,expenses,maintenance,setView,onRestock}){
   const lowStock = products.filter(p=>p.stock<=reorderOf(p)).sort((a,b)=>a.stock-b.stock);
+  const expiring = products
+    .map(p=>({p, ...expiryOf(p)}))
+    .filter(x=>x.state==='expired'||x.state==='soon')
+    .sort((a,b)=>a.days-b.days);
+  const expiredCount = expiring.filter(x=>x.state==='expired').length;
+  const expiringValue = expiring.reduce((s,x)=>s+Number(x.p.cost||0)*Number(x.p.stock||0),0);
   const todayExpenses = expenses.filter(e=>e.date===todayKey());
   const todayExpenseTotal = todayExpenses.reduce((s,e)=>s+Number(e.amount||0),0);
   const totalToday = todaySales.reduce((s,x)=>s+Number(x.total||0),0);
@@ -939,6 +963,26 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
         </div>
 
         <div className="card">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><h2>Expiry alerts</h2><p className="sub">Expired items and items expiring within {EXPIRY_SOON_DAYS} days</p></div><AlarmClock size={16} color={expiring.length?'#b45309':'#6b7d76'}/></div>
+          {expiring.length? <>
+            <div style={{display:'flex',gap:'6px',marginTop:'10px',flexWrap:'wrap'}}>
+              {expiredCount>0 && <span className="kpi" style={{color:'#991b1b',background:'#fef2f2'}}><b>{expiredCount}</b> expired</span>}
+              <span className="kpi" style={{color:'#92400e',background:'#fffbeb'}}><b>{expiring.length-expiredCount}</b> expiring soon</span>
+              <span className="kpi">At cost <b>{format(expiringValue)}</b></span>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:'8px',marginTop:'10px'}}>
+              {expiring.slice(0,5).map(({p,state,label})=>(
+                <div key={p.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',border:`1px solid ${state==='expired'?'#fecaca':'#fde68a'}`,background:state==='expired'?'#fef2f2':'#fffbeb',borderRadius:'8px'}}>
+                  <div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:state==='expired'?'#991b1b':'#92400e'}}>{readableDate(p.expiry)} · {label} · {p.stock} in stock</small></div>
+                  <span className={`status ${state==='expired'?'bad':'warn'}`}><i/>{state==='expired'?'Expired':'Soon'}</span>
+                </div>
+              ))}
+            </div>
+            <button className="btn small ghost" style={{marginTop:'10px'}} onClick={()=>setView('inventory')}>Review expiry <ArrowRight size={13}/></button>
+          </> : <div className="empty-state"><b>No expiry concerns</b><small>Nothing has expired or expires in the next {EXPIRY_SOON_DAYS} days</small></div>}
+        </div>
+
+        <div className="card">
           <div className="section-head"><div><h2>Recent activity</h2><p className="sub">Latest shop updates</p></div><button className="btn small ghost" onClick={()=>setView('timeline')}>Full timeline <ArrowRight size={13}/></button></div>
           <div style={{marginTop:'10px',display:'flex',flexDirection:'column',gap:'8px'}}>
             {activities.slice(0,5).map(a=><div key={a.id} style={{display:'flex',gap:'8px',alignItems:'center'}}><div style={{width:'28px',height:'28px',borderRadius:'8px',background:'#e6f4f1',display:'grid',placeItems:'center',color:'#0f766e'}}><ShoppingCart size={14}/></div><div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px',display:'block',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{a.title}</b><small style={{fontSize:'11px',color:'#6b7d76'}}>{a.detail}</small></div><small style={{fontSize:'10px',color:'#94a8a1'}}>{a.time}</small></div>)}
@@ -1006,7 +1050,9 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
           <div className="products">
             {products.map(p=>(
               <button key={p.id} className="prod" onClick={()=>{addToCart(p); focusSearch()}} disabled={p.stock<1}>
-                <div className="prod-top"><span className={`stock ${isOwner&&p.stock<=reorderOf(p)?'low':''}`}>{p.stock<1?'Out of stock':(isOwner&&p.stock<=reorderOf(p)?`${p.stock} left`:'In stock')}</span></div>
+                <div className="prod-top"><span className={`stock ${isOwner&&p.stock<=reorderOf(p)?'low':''}`}>{p.stock<1?'Out of stock':(isOwner&&p.stock<=reorderOf(p)?`${p.stock} left`:'In stock')}</span>
+                  {(()=>{ const e=expiryOf(p); return e.state==='expired'? <span className="status bad" style={{fontSize:'9px'}}><i/>Expired</span> : e.state==='soon'? <span className="status warn" style={{fontSize:'9px'}}><i/>Exp {e.days}d</span> : null })()}
+                </div>
                 <b>{p.name}</b><small>{p.brand} · {p.category}</small>
                 <div className="prod-foot"><strong>{format(p.price)}</strong><span className="add">Add</span></div>
               </button>
@@ -1065,16 +1111,23 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
 
 function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,stockMoves,onEdit,onDelete,onAdd,onStock}){
   const [stockFilter,setStockFilter]=useState('All');
+  const [expiryFilter,setExpiryFilter]=useState('All');
   const filtered = products.filter(p=>{
     const matchCat = cat==='All'||p.category===cat;
     const q = search.toLowerCase();
     const matchesText = matchCat && `${p.name} ${p.brand} ${p.sku} ${p.category} ${p.supplier||''}`.toLowerCase().includes(q);
     const matchesStock = stockFilter==='All' || (stockFilter==='Low' && p.stock<=reorderOf(p)) || (stockFilter==='Out' && p.stock===0);
-    return matchesText && matchesStock;
+    const exp = expiryOf(p).state;
+    const matchesExpiry = expiryFilter==='All' || (expiryFilter==='Expired' && exp==='expired') || (expiryFilter==='Soon' && exp==='soon') || (expiryFilter==='None' && exp==='none');
+    return matchesText && matchesStock && matchesExpiry;
   });
   const low = products.filter(p=>p.stock<=reorderOf(p)).length;
   const out = products.filter(p=>p.stock===0).length;
   const stockValue = products.reduce((s,p)=>s+Number(p.cost||0)*Number(p.stock||0),0);
+  const expired = products.filter(p=>expiryOf(p).state==='expired').length;
+  const expiringSoon = products.filter(p=>expiryOf(p).state==='soon').length;
+  const noExpiry = products.filter(p=>expiryOf(p).state==='none').length;
+  const expiredValue = products.filter(p=>expiryOf(p).state==='expired').reduce((s,p)=>s+Number(p.cost||0)*Number(p.stock||0),0);
   const totals = filtered.reduce((t,p)=>{
     const cost = Number(p.cost||0), price = Number(p.price||0), qty = Number(p.stock||0);
     t.stock += qty;
@@ -1087,8 +1140,13 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
     if(qty===0) t.out += 1;
     else if(qty<=reorderOf(p)) t.low += 1;
     else t.inStock += 1;
+    const exp = expiryOf(p);
+    if(exp.state==='expired'){ t.expired += 1; t.expiredValue += cost*qty; }
+    else if(exp.state==='soon') t.soon += 1;
+    else if(exp.state==='none') t.noExpiry += 1;
+    else t.expiryOk += 1;
     return t;
-  },{stock:0,reorder:0,cost:0,price:0,profit:0,costValue:0,priceValue:0,low:0,out:0,inStock:0});
+  },{stock:0,reorder:0,cost:0,price:0,profit:0,costValue:0,priceValue:0,low:0,out:0,inStock:0,expired:0,soon:0,expiryOk:0,noExpiry:0,expiredValue:0});
   const totalMargin = totals.price ? (totals.profit/totals.price*100) : 0;
   const totalCats = new Set(filtered.map(p=>p.category)).size;
   return (
@@ -1098,7 +1156,10 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
         <span className="kpi"><Package size={14}/> <b>{products.length}</b> total items</span>
         {isOwner && <span className="kpi" style={{color:low?'#92400e':'#065f46',background:low?'#fef3c7':'#ecfdf5'}}><AlertTriangle size={14}/> <b>{low}</b> low stock</span>}
         {isOwner && <span className="kpi" style={{color:out?'#991b1b':'#065f46',background:out?'#fef2f2':'#ecfdf5'}}><TrendingDown size={14}/> <b>{out}</b> out of stock</span>}
+        <span className="kpi" style={{color:expired?'#991b1b':'#065f46',background:expired?'#fef2f2':'#ecfdf5'}}><AlarmClock size={14}/> <b>{expired}</b> expired</span>
+        <span className="kpi" style={{color:expiringSoon?'#92400e':'#065f46',background:expiringSoon?'#fffbeb':'#ecfdf5'}}><CalendarDays size={14}/> <b>{expiringSoon}</b> expiring ≤{EXPIRY_SOON_DAYS}d</span>
         {isOwner && <span className="kpi"><Wallet size={14}/> Stock value <b>{format(stockValue)}</b></span>}
+        {isOwner && expiredValue>0 && <span className="kpi" style={{color:'#991b1b',background:'#fef2f2'}}><AlarmClock size={14}/> Expired stock <b>{format(expiredValue)}</b></span>}
         {isOwner && <span className="kpi"><History size={14}/> <b>{stockMoves.length}</b> stock moves</span>}
       </div>
       <div className="card">
@@ -1106,8 +1167,12 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
           <div className="search" style={{maxWidth:'380px'}}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={selectOnEnter} placeholder={isOwner?'Search items, SKU, brand, supplier…':'Search items, SKU, brand…'}/></div>
           <select value={cat} onChange={e=>setCat(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option>{categories.filter(c=>c!=='All').map(c=><option key={c}>{c}</option>)}</select>
           {isOwner && <div className="chips">{['All','Low','Out'].map(f=><button key={f} className={`chip-btn ${stockFilter===f?'active':''}`} onClick={()=>setStockFilter(f)}>{f==='All'?'All stock':f==='Low'?'Low stock':'Out of stock'}</button>)}</div>}
+          <div className="chips">
+            {[['All','All expiry'],['Expired',`Expired (${expired})`],['Soon',`Expiring soon (${expiringSoon})`],['None',`No expiry (${noExpiry})`]].map(([v,label])=>
+              <button key={v} className={`chip-btn ${expiryFilter===v?'active':''}`} onClick={()=>setExpiryFilter(v)} style={v!=='All'&&expiryFilter===v?(v==='Expired'?{background:'#fef2f2',color:'#991b1b',borderColor:'#fecaca'}:{}):undefined}>{label}</button>)}
+          </div>
         </div>
-        <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th>{isOwner&&<th>REORDER AT</th>}{isOwner&&<th>COST</th>}<th>PRICE</th>{isOwner&&<th>PROFIT</th>}<th>STATUS</th>{isOwner&&<th></th>}</tr></thead><tbody>
+        <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th>{isOwner&&<th>REORDER AT</th>}{isOwner&&<th>COST</th>}<th>PRICE</th>{isOwner&&<th>PROFIT</th>}<th>EXPIRY</th><th>STATUS</th>{isOwner&&<th></th>}</tr></thead><tbody>
           {filtered.map(p=>{
             const profit = p.price - (p.cost||0);
             const margin = p.price? (profit/p.price*100):0;
@@ -1119,6 +1184,7 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
               {isOwner&&<td>{format(p.cost||0)}</td>}
               <td><b>{format(p.price)}</b></td>
               {isOwner&&<td><span style={{color:profit>0?'#065f46':'#991b1b'}}>{format(profit)} ({margin.toFixed(0)}%)</span></td>}
+              <td>{(()=>{ const e=expiryOf(p); return <span className={`status ${e.state==='expired'?'bad':e.state==='soon'?'warn':e.state==='none'?'neutral':'ok'}`} title={p.expiry?`Expires ${readableDate(p.expiry)}`:''}><i/>{e.state==='none'?'Not set':(p.expiry?`${readableDate(p.expiry)} · ${e.label}`:e.label)}</span> })()}</td>
               <td><span className={`status ${p.stock===0?'bad':(isOwner&&p.stock<=reorderOf(p))?'warn':'ok'}`}><i/>{p.stock===0?'Out':(isOwner&&p.stock<=reorderOf(p))?'Low':'In stock'}</span></td>
               {isOwner&&<td><div style={{display:'flex',gap:'4px'}}>
                 <button className="btn small" title="Restock in" onClick={()=>onStock(p,'restock')}><Plus size={12}/> Stock</button>
@@ -1139,6 +1205,7 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
             {isOwner&&<td><b>{format(totals.cost)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>stock value {format(totals.costValue)}</small></td>}
             <td><b>{format(totals.price)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>retail value {format(totals.priceValue)}</small></td>
             {isOwner&&<td><b style={{color:totals.profit>0?'#065f46':'#991b1b'}}>{format(totals.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{totalMargin.toFixed(0)}% · on hand {format(totals.priceValue-totals.costValue)}</small></td>}
+            <td><span style={{fontSize:'10px',fontWeight:700,color:'#991b1b'}}>{totals.expired} expired</span> <span style={{fontSize:'10px',fontWeight:700,color:'#92400e'}}>· {totals.soon} soon</span>{isOwner && totals.expiredValue>0 && <small style={{display:'block',fontSize:'10px',color:'#991b1b'}}>{format(totals.expiredValue)} at cost</small>}</td>
             <td><span style={{fontSize:'10px',fontWeight:700,color:'#065f46'}}>{totals.inStock} in</span> <span style={{fontSize:'10px',fontWeight:700,color:'#92400e'}}>· {totals.low} low</span> <span style={{fontSize:'10px',fontWeight:700,color:'#991b1b'}}>· {totals.out} out</span></td>
             {isOwner&&<td></td>}
           </tr>
@@ -1696,7 +1763,7 @@ function ExpenseModal({expense,onClose,onSave,employees}){
 }
 
 function ProductModal({product,categories,defaultLowStock=5,onClose,onSave}){
-  const [form,setForm]=useState(product||{name:'',sku:'',category:'Other',brand:'',price:'',cost:'',stock:'',barcode:'',supplier:'',lowStockAt:defaultLowStock});
+  const [form,setForm]=useState(product||{name:'',sku:'',category:'Other',brand:'',price:'',cost:'',stock:'',barcode:'',supplier:'',expiry:'',lowStockAt:defaultLowStock});
   const [err,setErr]=useState('');
   const submit = (e)=>{
     e.preventDefault();
@@ -1714,6 +1781,7 @@ function ProductModal({product,categories,defaultLowStock=5,onClose,onSave}){
       barcode: form.barcode.trim(),
       supplier: form.supplier?.trim()||'',
       lowStockAt: Math.max(0, Math.floor(Number(form.lowStockAt ?? 5))),
+      expiry: (form.expiry||'').trim(),
     };
     onSave(p);
   };
@@ -1726,6 +1794,7 @@ function ProductModal({product,categories,defaultLowStock=5,onClose,onSave}){
           <div className="two"><div className="field"><label>Selling price (GH₵) *</label><input type="number" step="0.01" min="0" value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))} required/></div><div className="field"><label>Cost price (for profit)</label><input type="number" step="0.01" min="0" value={form.cost} onChange={e=>setForm(f=>({...f,cost:e.target.value}))} placeholder="0"/></div></div>
           <div className="two"><div className="field"><label>Stock quantity *</label><input type="number" min="0" step="1" value={form.stock} onChange={e=>setForm(f=>({...f,stock:e.target.value}))} required/></div><div className="field"><label>Reorder level (low stock alert at)</label><input type="number" min="0" step="1" value={form.lowStockAt??5} onChange={e=>setForm(f=>({...f,lowStockAt:e.target.value}))}/></div></div>
           <div className="two"><div className="field"><label>SKU</label><input value={form.sku} onChange={e=>setForm(f=>({...f,sku:e.target.value}))} placeholder="Auto if empty"/></div><div className="field"><label>Supplier (optional)</label><input value={form.supplier||''} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))} placeholder="e.g. Royal Farms"/></div></div>
+          <div className="field"><label>Expiry date</label><input type="date" value={form.expiry||''} onChange={e=>setForm(f=>({...f,expiry:e.target.value}))}/><small>Items inside {EXPIRY_SOON_DAYS} days of expiry are flagged automatically. Leave empty if not applicable.</small></div>
           <div className="field"><label>Barcode (optional)</label><input value={form.barcode} onChange={e=>setForm(f=>({...f,barcode:e.target.value}))} placeholder="Scan or enter"/></div>
           {err && <div style={{color:'#b91c1c',fontSize:'12px'}}>{err}</div>}
         </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" className="btn primary"><Check size={14}/>{product?'Save changes':'Add item'}</button></div></form>

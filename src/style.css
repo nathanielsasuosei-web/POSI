@@ -224,6 +224,7 @@ tfoot tr:first-child td{border-top:2px solid #dfe7e2}
 .field input,.field select,.field textarea{width:100%;min-height:38px;padding:0 11px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px}
 .field textarea{min-height:80px;padding:10px 11px;resize:vertical}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.field small{font-size:10px;color:#6b7d76;line-height:1.4}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:560px){.two{grid-template-columns:1fr}}
 
