@@ -245,6 +245,7 @@ function App({offline}){
   const [showPay,setShowPay]=useState(false);
   const [selectedInvoice,setSelectedInvoice]=useState(null);
   const [selectedReceipt,setSelectedReceipt]=useState(null);
+  const [editingSale,setEditingSale]=useState(null); // owner correcting a recorded sale
   const [mobileCart,setMobileCart]=useState(false);
   const [mobileMore,setMobileMore]=useState(false);
 
@@ -288,6 +289,13 @@ function App({offline}){
     setView(currentUser.role==='owner' ? 'dashboard' : 'pos');
   },[currentUser]);
 
+  // Signing in as someone else on this device must not carry the previous
+  // worker's sale filters, open invoice, receipt or correction form over.
+  useEffect(()=>{
+    setSelectedInvoice(null); setSelectedReceipt(null); setEditingSale(null);
+    setFilterSales({search:'',payment:'All',date:'All',cashier:'All'});
+  },[userId]);
+
   // Older locally saved staff records have no username/passwordHash. Give them
   // the documented starter credentials (owner: owner/owner123, staff: first
   // name / first name + 123) so nobody is locked out by the upgrade.
@@ -320,6 +328,10 @@ function App({offline}){
   const signOut = ()=>{
     try{ sessionStorage.removeItem('pos-user-id'); sessionStorage.removeItem('pos-role'); sessionStorage.removeItem('pos-cashier') }catch{}
     setUserId(null); setCart([]); setView('pos');
+    // Never leave another worker's invoice/receipt or sale edit open for the
+    // next person who signs in on this device.
+    setSelectedInvoice(null); setSelectedReceipt(null); setEditingSale(null);
+    setFilterSales({search:'',payment:'All',date:'All',cashier:'All'});
   };
 
   // Owner-only: change any employee's username and/or reset their password.
@@ -640,6 +652,186 @@ function App({offline}){
     setCart([]); setDiscountOn(false); setShowPay(false); setMobileCart(false);
     setSuccess(sale);
     if(isOwner && lowNow.length){ setTimeout(()=>flash(`Low stock alert: ${lowNow.join(', ')} — restock soon`), 400); }
+    if(!isOwner) flash(`Sale ${invoiceNumber} recorded — today's sales are under Today's Sales`);
+  };
+
+  // A signed-in employee may only open their own sales from today. The owner
+  // can open any sale from any date.
+  const canAccessSale = (sale)=> !!sale && (isOwner || (((sale.cashierId===currentUser?.id) || (sale.cashier===currentUser?.name)) && sale.date===todayKey()));
+
+  // Owner correction of a recorded sale: seller, customer, payment, date/time,
+  // line items (quantity and unit price), discount, plus a mandatory reason.
+  // Stock, customer spend and gift-card balances are all reconciled.
+  const saveSaleEdit = (original, form)=>{
+    if(!isOwner){ flash('Only the owner can correct or change a recorded sale'); return false }
+    if(!original) return false;
+    const items = (form.items||[])
+      .map(it=>({productId:it.productId, name:it.name, qty:Number(it.qty||0), unitPrice:Number(it.unitPrice||0), cost:Number(it.cost||0)}))
+      .filter(it=>it.qty>0)
+      .map(it=>({...it, lineTotal:Number((it.unitPrice*it.qty).toFixed(2))}));
+    if(!items.length){ flash('A sale needs at least one item'); return false }
+    const reason = String(form.reason||'').trim();
+    if(reason.length<3){ flash('Add a short reason for this correction'); return false }
+    const subtotal = Number(items.reduce((s,it)=>s+it.lineTotal,0).toFixed(2));
+    const discount = Math.min(subtotal, Math.max(0, Number(form.discount||0)));
+    const total = Number((subtotal-discount).toFixed(2));
+    const itemCount = items.reduce((s,it)=>s+it.qty,0);
+    const customer = customers.find(c=>c.id===form.customerId) || customers[0];
+    const seller = employees.find(e=>e.id===form.cashierId) || employees.find(e=>e.name===original.cashier) || null;
+    const payment = form.payment || original.payment;
+    const date = form.date || original.date;
+    const time = form.time || original.time;
+
+    // Gift-card payments must stay covered by the card after the correction.
+    let giftCode = '';
+    if(payment==='Gift'){
+      giftCode = String(form.giftCode ?? original.paymentDetail?.code ?? '').trim();
+      const card = giftCards.find(g=>g.code===giftCode);
+      if(!card){ flash('Choose a valid gift card code for a gift-card sale'); return false }
+      const refundable = original.payment==='Gift' && original.paymentDetail?.code===giftCode ? Number(original.total||0) : 0;
+      if(Number(card.balance||0)+refundable < total){ flash(`Gift card ${giftCode} only has ${format(Number(card.balance||0)+refundable)} available`); return false }
+      setGiftCards(gs=>gs.map(g=>{
+        let balance = Number(g.balance||0);
+        if(original.payment==='Gift' && original.paymentDetail?.code===g.code) balance += Number(original.total||0);
+        if(g.code===giftCode) balance -= total;
+        balance = Math.max(0, Number(balance.toFixed(2)));
+        return {...g, balance, status: balance<=0.01?'used':'active'};
+      }));
+    } else if(original.payment==='Gift' && original.paymentDetail?.code){
+      // Payment corrected away from a gift card — put the money back on the card.
+      const code = original.paymentDetail.code;
+      setGiftCards(gs=>gs.map(g=>{
+        if(g.code!==code) return g;
+        const balance = Number((Number(g.balance||0)+Number(original.total||0)).toFixed(2));
+        return {...g, balance, status:'active'};
+      }));
+    }
+
+    // Stock reconciliation: the difference between the old and corrected
+    // quantities goes back in (or comes out of) inventory, and is logged.
+    const qtyByProduct = (list)=>{
+      const map = new Map();
+      (list||[]).forEach(it=>{ if(it.productId) map.set(it.productId,(map.get(it.productId)||0)+Number(it.qty||0)) });
+      return map;
+    };
+    const oldQty = qtyByProduct(original.items);
+    const newQty = qtyByProduct(items);
+    const touched = new Set([...oldQty.keys(),...newQty.keys()]);
+    const stockLog = []; const lowNow = [];
+    const nextProducts = products.map(p=>{
+      if(!touched.has(p.id)) return p;
+      const delta = (newQty.get(p.id)||0)-(oldQty.get(p.id)||0);
+      if(!delta) return p;
+      const stock = Math.max(0, Number(p.stock||0)-delta);
+      stockLog.push({productId:p.id, productName:p.name, qty:-delta, cost:Number(p.cost||0), unitPrice:Number(p.price||0)});
+      if(stock<=reorderOf(p)) lowNow.push(p.name);
+      return {...p, stock};
+    });
+    if(stockLog.length){
+      setProducts(nextProducts);
+      setStockMoves(sm=>[
+        ...stockLog.map(m=>({id:uid('sm'),productId:m.productId,productName:m.productName,type:'adjustment',qty:m.qty,cost:m.cost,unitPrice:m.unitPrice,date:todayKey(),time:shortTime(),by:currentUser?.name||'Owner',note:`${original.invoiceNumber} corrected`})),
+        ...sm,
+      ].slice(0,300));
+    }
+
+    // Customer spend/visit figures follow the corrected sale.
+    setCustomers(cs=>cs.map(c=>{
+      if(c.isWalkIn) return c;
+      const wasCustomer = c.id===original.customerId;
+      const isCustomer = c.id===customer?.id;
+      if(!wasCustomer && !isCustomer) return c;
+      let totalSpent = Number(c.totalSpent||0);
+      let visits = Number(c.visits||0);
+      if(wasCustomer) totalSpent -= Number(original.total||0);
+      if(isCustomer) totalSpent += total;
+      if(wasCustomer && !isCustomer) visits = Math.max(0,visits-1);
+      if(isCustomer && !wasCustomer) visits += 1;
+      return {...c, totalSpent:Math.max(0,Number(totalSpent.toFixed(2))), visits};
+    }));
+
+    const correction = {
+      id:uid('cor'),
+      at:new Date().toISOString(),
+      by:currentUser?.name||'Owner',
+      reason,
+      before:{total:Number(original.total||0),seller:original.cashier,payment:original.payment,date:original.date,time:original.time,customer:original.customerName,units:saleUnits(original)},
+      after:{total,seller:seller?.name||original.cashier,payment,date,time,customer:customer?.name||original.customerName,units:itemCount},
+    };
+    const nextSale = {
+      ...original,
+      date, time,
+      cashier: seller?.name || original.cashier,
+      cashierId: seller?.id || original.cashierId,
+      customerId: customer?.id || original.customerId,
+      customerName: customer?.name || original.customerName,
+      items, subtotal, discount, total, itemCount,
+      payment,
+      paymentDetail: payment==='Gift' ? {...(original.paymentDetail||{}), code:giftCode} : {},
+      status:'paid',
+      editedAt:new Date().toISOString(),
+      editedBy:currentUser?.name||'Owner',
+      editCount:Number(original.editCount||0)+1,
+      corrections:[...(original.corrections||[]), correction],
+    };
+    setSales(prev=>prev.map(s=>s.id===original.id?nextSale:s));
+    setEditingSale(null);
+    setSelectedInvoice(prev=>prev&&prev.id===original.id?nextSale:prev);
+    setSelectedReceipt(prev=>prev&&prev.id===original.id?nextSale:prev);
+    addActivity({
+      type:'sale',
+      title:`${currentUser?.name||'Owner'} corrected sale ${original.invoiceNumber}`,
+      detail:`${format(original.total)} → ${format(total)} · ${reason}`,
+    });
+    flash(`${original.invoiceNumber} corrected — stock, totals and history updated`);
+    if(lowNow.length) setTimeout(()=>flash(`Low stock alert: ${lowNow.join(', ')} — restock soon`), 500);
+    return true;
+  };
+
+  // Owner deletion of a recorded sale: inventory is restored, the sale's stock
+  // movements are removed, customer spend and gift-card balances are reversed.
+  const deleteSale = (sale)=>{
+    if(!isOwner){ flash('Only the owner can delete a recorded sale'); return false }
+    if(!sale) return false;
+    const restored = [];
+    const nextProducts = products.map(p=>{
+      const back = (sale.items||[]).filter(it=>it.productId===p.id).reduce((s,it)=>s+Number(it.qty||0),0);
+      if(!back) return p;
+      restored.push({productId:p.id,productName:p.name,qty:back,cost:Number(p.cost||0),unitPrice:Number(p.price||0)});
+      return {...p, stock:Number(p.stock||0)+back};
+    });
+    if(restored.length){
+      setProducts(nextProducts);
+      setStockMoves(sm=>[
+        ...restored.map(m=>({id:uid('sm'),productId:m.productId,productName:m.productName,type:'adjustment',qty:m.qty,cost:m.cost,unitPrice:m.unitPrice,date:todayKey(),time:shortTime(),by:currentUser?.name||'Owner',note:`${sale.invoiceNumber} deleted — stock restored`})),
+        ...sm.filter(m=>!(m.type==='sale' && (m.note===sale.id || m.note===sale.invoiceNumber))),
+      ].slice(0,300));
+    } else {
+      setStockMoves(sm=>sm.filter(m=>!(m.type==='sale' && (m.note===sale.id || m.note===sale.invoiceNumber))));
+    }
+    setCustomers(cs=>cs.map(c=>{
+      if(c.isWalkIn || c.id!==sale.customerId) return c;
+      return {
+        ...c,
+        totalSpent:Math.max(0,Number((Number(c.totalSpent||0)-Number(sale.total||0)).toFixed(2))),
+        visits:Math.max(0,Number(c.visits||0)-1),
+      };
+    }));
+    if(sale.payment==='Gift' && sale.paymentDetail?.code){
+      const code = sale.paymentDetail.code;
+      setGiftCards(gs=>gs.map(g=> g.code!==code ? g : ({...g, balance:Number((Number(g.balance||0)+Number(sale.total||0)).toFixed(2)), status:'active'})));
+    }
+    setSales(prev=>prev.filter(s=>s.id!==sale.id));
+    setEditingSale(null);
+    setSelectedInvoice(prev=>prev&&prev.id===sale.id?null:prev);
+    setSelectedReceipt(prev=>prev&&prev.id===sale.id?null:prev);
+    addActivity({
+      type:'sale',
+      title:`${currentUser?.name||'Owner'} deleted sale ${sale.invoiceNumber}`,
+      detail:`${format(sale.total)} · ${sale.cashier} · stock restored`,
+    });
+    flash(`${sale.invoiceNumber} deleted — stock and customer totals restored`);
+    return true;
   };
 
   const todaySales = useMemo(()=> sales.filter(s=>s.date===todayKey()),[sales]);
@@ -684,7 +876,7 @@ function App({offline}){
     {id:'pos',label:'POS',icon:ShoppingCart},
     {id:'inventory',label:'Items',icon:Package},
     {id:'customers',label:'Customers',icon:Users},
-    {id:'invoices',label:'My Sales',icon:FileText},
+    {id:'invoices',label:'Today’s Sales',icon:FileText},
     {id:'messages',label:'Messages',icon:MessageSquare},
   ];
   const nav = isOwner?navOwner:navCashier;
@@ -783,7 +975,7 @@ function App({offline}){
           {view==='maintenance' && isOwner && <MaintenancePage records={maintenance} onSave={saveMaintenance} onComplete={completeMaintenance} onDelete={deleteMaintenance} />}
           {view==='timeline' && isOwner && <TimelinePage activities={activities} sales={sales} stockMoves={stockMoves} expenses={expenses} maintenance={maintenance} messages={messages} />}
           {view==='settings' && isOwner && <SettingsPage settings={settings} onSave={saveSettings} onExportBackup={exportShopData} onChangePassword={()=>setShowMyPassword(true)} offlineStatus={offline.status} counts={{Products:products.length,Sales:sales.length,Customers:customers.filter(c=>!c.isWalkIn).length,Staff:employees.length,Expenses:expenses.length,Maintenance:maintenance.length}} />}
-          {view==='invoices' && <InvoicesPage sales={visibleSales} products={products} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} employees={employees} />}
+          {view==='invoices' && <InvoicesPage sales={visibleSales} products={products} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={(s)=>canAccessSale(s)&&setSelectedInvoice(s)} onViewReceipt={(s)=>canAccessSale(s)&&setSelectedReceipt(s)} onEditSale={isOwner?setEditingSale:undefined} employees={employees} />}
           {view==='expenses' && isOwner && <ExpensesPage expenses={expenses} onEdit={(e)=>{setEditingExpense(e);setShowExpenseModal(true)}} onAdd={()=>{setEditingExpense(null);setShowExpenseModal(true)}} onDelete={deleteExpense} />}
           {view==='gift' && isOwner && <GiftAccountPage giftCards={giftCards} customers={customers} sales={sales} onAdd={()=>setShowGiftModal(true)} onPayAccount={payAccount} />}
           {view==='staff' && isOwner && <StaffPage employees={employees} sales={sales} attendance={attendance} currentUser={currentUser} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} onViewSales={setStaffSales} onCredentials={setCredentialsFor} />}
@@ -816,10 +1008,11 @@ function App({offline}){
       {showMessageModal && <MessageModal employees={employees} currentUser={currentUser} onClose={()=>setShowMessageModal(false)} onSend={sendMessage} />}
       {showExpenseModal && <ExpenseModal expense={editingExpense} onClose={()=>{setShowExpenseModal(false);setEditingExpense(null)}} onSave={saveExpense} employees={employees} />}
       {stockModal && <StockModal stock={stockModal} onClose={()=>setStockModal(null)} onSave={applyStockChange} />}
-      {staffSales && isOwner && <StaffSalesModal employee={staffSales} sales={sales} products={products} onClose={()=>setStaffSales(null)} onViewInvoice={(s)=>{setStaffSales(null);setSelectedInvoice(s)}} onViewReceipt={(s)=>{setStaffSales(null);setSelectedReceipt(s)}} />}
+      {staffSales && isOwner && <StaffSalesModal employee={staffSales} sales={sales} products={products} onClose={()=>setStaffSales(null)} onViewInvoice={(s)=>{setStaffSales(null);setSelectedInvoice(s)}} onViewReceipt={(s)=>{setStaffSales(null);setSelectedReceipt(s)}} onEdit={setEditingSale} />}
+      {editingSale && isOwner && <SaleEditModal sale={editingSale} products={products} customers={customers} employees={employees} giftCards={giftCards} onClose={()=>setEditingSale(null)} onSave={saveSaleEdit} onDelete={deleteSale} />}
       {showPay && <PaymentModal cart={cart} subtotal={subtotal} discount={discount} total={total} customer={selectedCustomer} giftCards={giftCards} onClose={()=>setShowPay(false)} onComplete={completeSale} isOwner={isOwner} />}
-      {selectedInvoice && <InvoiceModal sale={selectedInvoice} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} />}
-      {selectedReceipt && <ReceiptModal sale={selectedReceipt} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedReceipt(null)} />}
+      {selectedInvoice && canAccessSale(selectedInvoice) && <InvoiceModal sale={selectedInvoice} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} onEditSale={isOwner?((s)=>{setSelectedInvoice(null);setEditingSale(s)}):undefined} />}
+      {selectedReceipt && canAccessSale(selectedReceipt) && <ReceiptModal sale={selectedReceipt} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedReceipt(null)} />}
       {toast && <div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
       {success && <div className="success"><span style={{width:'32px',height:'32px',borderRadius:'50%',background:'#ecfdf5',color:'#065f46',display:'grid',placeItems:'center'}}><Check size={16}/></span><span><b>Sale invoiced!</b><small>{success.invoiceNumber} · {format(success.total)}</small></span><button className="btn small primary" onClick={()=>{setSelectedReceipt(success);setSuccess(null)}}><Printer size={14}/>Print receipt</button><button className="btn small" onClick={()=>{setSelectedInvoice(success);setSuccess(null)}}><FileText size={14}/>Invoice</button><button className="btn icon small" onClick={()=>setSuccess(null)}><X size={14}/></button></div>}
     </div>
@@ -1457,7 +1650,7 @@ function SalesCalendar({sales,products=[],from,to,onSelect,onClear,isOwner}){
   );
 }
 
-function InvoicesPage({sales:salesAll,products=[],isOwner,filter,setFilter,onViewInvoice,onViewReceipt,employees}){
+function InvoicesPage({sales:salesAll,products=[],isOwner,filter,setFilter,onViewInvoice,onViewReceipt,onEditSale,employees}){
   const [range,setRange]=useState({from:'',to:''});
   const [showCalendar,setShowCalendar]=useState(true);
   const sales = useMemo(()=>{
@@ -1486,9 +1679,17 @@ function InvoicesPage({sales:salesAll,products=[],isOwner,filter,setFilter,onVie
   const totalMargin = totals.total ? (totals.profit/totals.total*100) : 0;
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> {isOwner?'SALES HISTORY · OWNER':'SALES HISTORY'}</div><h1>{isOwner?'Sales history & receipts':'My sales history — today'}</h1>{isOwner && <p>Every invoice from every cashier, filterable by calendar date, employee, payment and search.</p>}</div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span>{range.from && <span className="kpi" style={{background:'#e6f4f1',color:'#0f766e'}}><CalendarDays size={14}/> <b>{range.to && range.to!==range.from?`${readableDate(range.from)} → ${readableDate(range.to)}`:readableDate(range.from)}</b></span>}<span className="kpi"><Package size={14}/> <b>{totals.items.toLocaleString()}</b> products bought</span>{isOwner && <span className="kpi" style={{background:'#ecfdf5'}}><PiggyBank size={14}/> <b>{format(totals.profit)}</b> profit</span>}<button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Units bought','Payment','Total',...(isOwner?['Profit']:[])]; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,saleUnits(s),s.payment,s.total,...(isOwner?[saleProfit(s,products).toFixed(2)]:[])]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${range.from?(range.to&&range.to!==range.from?`${range.from}_to_${range.to}`:range.from):todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
+      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> {isOwner?'SALES HISTORY · OWNER':'MY SALES · TODAY ONLY'}</div><h1>{isOwner?'Sales history & receipts':'Today’s sales'}</h1><p>{isOwner?'Every invoice from every cashier — open one to correct it, or filter by calendar date, employee, payment and search.':'Only the sales you complete today appear here. Earlier sales are visible to the owner only.'}</p></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span>{range.from && <span className="kpi" style={{background:'#e6f4f1',color:'#0f766e'}}><CalendarDays size={14}/> <b>{range.to && range.to!==range.from?`${readableDate(range.from)} → ${readableDate(range.to)}`:readableDate(range.from)}</b></span>}<span className="kpi"><Package size={14}/> <b>{totals.items.toLocaleString()}</b> products bought</span>{isOwner && <span className="kpi" style={{background:'#ecfdf5'}}><PiggyBank size={14}/> <b>{format(totals.profit)}</b> profit</span>}<button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Units bought','Payment','Total',...(isOwner?['Profit']:[])]; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,saleUnits(s),s.payment,s.total,...(isOwner?[saleProfit(s,products).toFixed(2)]:[])]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${range.from?(range.to&&range.to!==range.from?`${range.from}_to_${range.to}`:range.from):todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
 
-      <div className="card" style={{marginBottom:'14px'}}>
+      {!isOwner && (
+        <div className="card" style={{marginBottom:'14px',display:'flex',gap:'12px',alignItems:'flex-start',background:'#f9fbf9'}}>
+          <div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#eef2f0',color:'#0f2320',display:'grid',placeItems:'center',flex:'none'}}><Lock size={17}/></div>
+          <div><b style={{fontSize:'13px'}}>Your sales history is private to the owner</b>
+            <p className="sub" style={{marginTop:'3px'}}>You can review and print the sales you made <b>today</b>. Sales from earlier days, other cashiers&apos; sales and every past receipt are hidden — the owner can see, correct or delete them.</p></div>
+        </div>
+      )}
+
+      {isOwner && <div className="card" style={{marginBottom:'14px'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
           <div><h2 style={{display:'flex',alignItems:'center',gap:'7px'}}><CalendarDays size={16} color="#0f766e"/> Sales calendar</h2><p className="sub">Click a day, or click two days to select a range — the table and totals follow</p></div>
           <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
@@ -1499,17 +1700,17 @@ function InvoicesPage({sales:salesAll,products=[],isOwner,filter,setFilter,onVie
         </div>
         {showCalendar && <SalesCalendar sales={salesAll} products={products} isOwner={isOwner} from={range.from} to={range.to}
           onSelect={(a,b)=>setRange({from:a,to:b})} onClear={clearRange}/>}
-      </div>
+      </div>}
 
       <div className="card">
         <div className="toolbar">
           <div className="search" style={{maxWidth:'320px'}}><Search size={16}/><input value={filter.search} onChange={e=>setFilter(f=>({...f,search:e.target.value}))} onKeyDown={selectOnEnter} placeholder="Search invoice, customer, seller…"/></div>
-          {isOwner && <select value={filter.cashier||'All'} onChange={e=>setFilter(f=>({...f,cashier:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All employees</option>{employees.filter(e=>e.role!=='owner').map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>}
+          {isOwner && <select value={filter.cashier||'All'} onChange={e=>setFilter(f=>({...f,cashier:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All sellers</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name}{e.role==='owner'?' (owner)':''}</option>)}</select>}
           <select value={filter.payment} onChange={e=>setFilter(f=>({...f,payment:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option><option>Cash</option><option>MoMo</option><option>Gift</option></select>
           {isOwner && <select value={filter.date} onChange={e=>{ setFilter(f=>({...f,date:e.target.value})); setRange({from:'',to:''}) }} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>}
         </div>
         <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>SELLER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th>{isOwner&&<th>PROFIT</th>}<th>STATUS</th><th></th></tr></thead><tbody>
-          {sales.map(s=>{ const profit = saleProfit(s,products); return <tr key={s.id}><td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.id}</small></td><td><b>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td><td>{s.customerName}</td><td>{s.cashier}</td><td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td><td><b>{saleUnits(s)}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>bought</small></td><td><b>{format(s.total)}</b></td>{isOwner&&<td><b style={{color:profit>0?'#065f46':profit<0?'#991b1b':'#6b7d76'}}>{format(profit)}</b></td>}<td><span className="status ok"><i/>Paid</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td></tr>})}
+          {sales.map(s=>{ const profit = saleProfit(s,products); return <tr key={s.id}><td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.id}</small>{s.editCount>0 && <small style={{display:'block',fontSize:'10px',color:'#92400e',fontWeight:700}} title={`Corrected by ${s.editedBy} · last ${new Date(s.editedAt).toLocaleString('en-GH')}`}>✎ corrected ×{s.editCount}</small>}</td><td><b>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td><td>{s.customerName}</td><td>{s.cashier}</td><td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td><td><b>{saleUnits(s)}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>bought</small></td><td><b>{format(s.total)}</b></td>{isOwner&&<td><b style={{color:profit>0?'#065f46':profit<0?'#991b1b':'#6b7d76'}}>{format(profit)}</b></td>}<td><span className="status ok"><i/>Paid</span></td><td><div style={{display:'flex',gap:'4px',flexWrap:'wrap'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button>{isOwner && <button className="btn small" onClick={()=>onEditSale(s)} title="Owner only — correct or delete this recorded sale"><Edit2 size={12}/> Correct</button>}</div></td></tr>})}
         </tbody>
         {sales.length>0 && <tfoot><tr>
           <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{sales.length} invoice{sales.length===1?'':'s'}</small></td>
@@ -1862,7 +2063,7 @@ function MessagesPage({messages,employees,currentUser,isOwner,onSend,onMarkRead}
   );
 }
 
-function StaffSalesModal({employee,sales,products=[],onClose,onViewInvoice,onViewReceipt}){
+function StaffSalesModal({employee,sales,products=[],onClose,onViewInvoice,onViewReceipt,onEdit}){
   const empSales = sales.filter(s=>s.cashierId===employee.id || s.cashier===employee.name);
   const total = empSales.reduce((s,x)=>s+Number(x.total||0),0);
   const items = empSales.reduce((s,x)=>s+saleUnits(x),0);
@@ -1881,13 +2082,13 @@ function StaffSalesModal({employee,sales,products=[],onClose,onViewInvoice,onVie
           <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th><th></th></tr></thead><tbody>
             {empSales.map(s=>(
               <tr key={s.id}>
-                <td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b></td>
+                <td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b>{s.editCount>0 && <small style={{display:'block',fontSize:'10px',color:'#92400e',fontWeight:700}}>✎ corrected ×{s.editCount}</small>}</td>
                 <td><b style={{fontSize:'12px'}}>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td>
                 <td>{s.customerName}</td>
                 <td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td>
                 <td>{s.itemCount}</td>
                 <td><b>{format(s.total)}</b></td>
-                <td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td>
+                <td><div style={{display:'flex',gap:'4px',flexWrap:'wrap'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button>{onEdit && <button className="btn small" onClick={()=>onEdit(s)} title="Owner only — correct or delete this sale"><Edit2 size={12}/> Correct</button>}</div></td>
               </tr>
             ))}
           </tbody>
@@ -2342,7 +2543,194 @@ function PaymentModal({cart,subtotal,discount,total,customer,giftCards,onClose,o
   );
 }
 
-function InvoiceModal({sale,shop=SHOP,receiptFooter='',onClose,onPrintReceipt}){
+// Owner-only editor for an already recorded sale. Every change is reversible
+// only by correcting again, so a reason is required and the before/after values
+// are kept on the sale as a correction trail.
+function SaleEditModal({sale,products,customers,employees,giftCards,onClose,onSave,onDelete}){
+  const [form,setForm]=useState(()=>({
+    date:sale.date||todayKey(),
+    time:sale.time||shortTime(),
+    customerId:sale.customerId||customers[0]?.id||'',
+    cashierId:sale.cashierId||employees.find(e=>e.name===sale.cashier)?.id||'',
+    payment:sale.payment||'Cash',
+    giftCode:sale.paymentDetail?.code||giftCards.find(g=>g.status==='active')?.code||'',
+    discount:Number(sale.discount||0),
+    reason:'',
+    items:(sale.items||[]).map(it=>({
+      productId:it.productId,
+      name:it.name,
+      qty:Number(it.qty||0),
+      unitPrice:Number(it.unitPrice||0),
+      cost:Number(it.cost ?? products.find(p=>p.id===it.productId)?.cost ?? 0),
+    })),
+  }));
+  const [addId,setAddId]=useState('');
+  const [err,setErr]=useState('');
+  const [confirmDelete,setConfirmDelete]=useState(false);
+  const set = (patch)=>setForm(f=>({...f,...patch}));
+  const setItem = (idx,patch)=>setForm(f=>({...f,items:f.items.map((it,i)=>i===idx?{...it,...patch}:it)}));
+  const removeItem = (idx)=>setForm(f=>({...f,items:f.items.filter((_,i)=>i!==idx)}));
+  const addItem = ()=>{
+    const prod = products.find(p=>p.id===addId);
+    if(!prod) return;
+    if(form.items.some(it=>it.productId===prod.id)){ setErr(`${prod.name} is already on this sale — change its quantity instead`); return }
+    setForm(f=>({...f,items:[...f.items,{productId:prod.id,name:prod.name,qty:1,unitPrice:Number(prod.price||0),cost:Number(prod.cost||0)}]}));
+    setAddId(''); setErr('');
+  };
+  const subtotal = Number(form.items.reduce((s,it)=>s+Number(it.qty||0)*Number(it.unitPrice||0),0).toFixed(2));
+  const discount = Math.min(subtotal, Math.max(0, Number(form.discount||0)));
+  const total = Number((subtotal-discount).toFixed(2));
+  const units = form.items.reduce((s,it)=>s+Number(it.qty||0),0);
+  // Stock check: the quantities already on the sale are available to keep.
+  const stockIssue = form.items.map(it=>{
+    const oldQty = (sale.items||[]).filter(x=>x.productId===it.productId).reduce((s,x)=>s+Number(x.qty||0),0);
+    const prod = products.find(p=>p.id===it.productId);
+    const available = Number(prod?.stock||0)+oldQty;
+    return Number(it.qty||0)>available ? `${it.name} — only ${available} available (${prod?.stock||0} in stock + ${oldQty} on this sale)` : null;
+  }).filter(Boolean);
+  const submit = ()=>{
+    if(!form.items.length){ setErr('A sale needs at least one item'); return }
+    if(form.items.some(it=>!Number(it.qty)||Number(it.qty)<1)){ setErr('Every item needs a quantity of at least 1'); return }
+    if(form.items.some(it=>Number(it.unitPrice)<0)){ setErr('Unit prices cannot be negative'); return }
+    if(stockIssue.length){ setErr(stockIssue[0]); return }
+    if(String(form.reason||'').trim().length<3){ setErr('Add a short reason so the correction is on record'); return }
+    if(form.payment==='Gift' && !form.giftCode){ setErr('Choose the gift card used for this sale'); return }
+    const ok = onSave(sale, form);
+    if(ok===false) setErr('Could not save this correction — check the details above');
+  };
+  const activeCards = giftCards.filter(g=>g.status==='active' || g.code===sale.paymentDetail?.code);
+  return (
+    <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
+      <div className="modal wide">
+        <div className="modal-head">
+          <div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#e6f4f1',color:'#0f766e',display:'grid',placeItems:'center'}}><Edit2 size={18}/></div>
+          <div><h3>Correct sale {sale.invoiceNumber}</h3><p>Owner only · {sale.cashier} · {readableDate(sale.date)} {sale.time} · {format(sale.total)}</p></div>
+          <button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button>
+        </div>
+        <div className="modal-body">
+          <div style={{display:'flex',gap:'8px',alignItems:'flex-start',padding:'10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',fontSize:'12px',color:'#92400e'}}>
+            <AlertTriangle size={15} style={{flex:'none',marginTop:'1px'}}/>
+            <span>This changes the shop&apos;s record. Quantities are reconciled against stock automatically, customer spend and gift-card balances are updated, and the change is written to the activity timeline.</span>
+          </div>
+
+          <div className="two">
+            <div className="field"><label>Seller</label>
+              <select value={form.cashierId} onChange={e=>set({cashierId:e.target.value})}>
+                {employees.map(e=><option key={e.id} value={e.id}>{e.name} · {e.role}</option>)}
+              </select>
+            </div>
+            <div className="field"><label>Customer</label>
+              <select value={form.customerId} onChange={e=>set({customerId:e.target.value})}>
+                {customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="two">
+            <div className="field"><label>Sale date</label><input type="date" value={form.date} onChange={e=>set({date:e.target.value})}/></div>
+            <div className="field"><label>Sale time</label><input type="time" value={form.time} onChange={e=>set({time:e.target.value})}/></div>
+          </div>
+          <div className="two">
+            <div className="field"><label>Payment method</label>
+              <select value={form.payment} onChange={e=>set({payment:e.target.value})}>
+                <option>Cash</option><option>MoMo</option><option>Gift</option>
+              </select>
+            </div>
+            {form.payment==='Gift' ? (
+              <div className="field"><label>Gift card</label>
+                <select value={form.giftCode} onChange={e=>set({giftCode:e.target.value})}>
+                  {activeCards.length===0 && <option value="">No gift cards available</option>}
+                  {activeCards.map(g=><option key={g.id} value={g.code}>{g.code} · {format(g.balance)} left</option>)}
+                </select>
+              </div>
+            ) : (
+              <div className="field"><label>Discount (GH₵)</label><input type="number" min="0" step="0.01" value={form.discount} onChange={e=>set({discount:e.target.value})}/></div>
+            )}
+          </div>
+          {form.payment==='Gift' && <div className="field"><label>Discount (GH₵)</label><input type="number" min="0" step="0.01" value={form.discount} onChange={e=>set({discount:e.target.value})}/></div>}
+
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+              <b style={{fontSize:'12px'}}>Items on this sale</b>
+              <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                <select value={addId} onChange={e=>setAddId(e.target.value)} style={{minHeight:'32px',border:'1px solid #e7ece8',borderRadius:'8px',padding:'0 8px',fontSize:'12px'}}>
+                  <option value="">Add an item…</option>
+                  {products.map(p=><option key={p.id} value={p.id}>{p.name} · {format(p.price)} · {p.stock} left</option>)}
+                </select>
+                <button className="btn small" onClick={addItem} disabled={!addId}><Plus size={12}/> Add</button>
+              </div>
+            </div>
+            <div className="table-wrap" style={{marginTop:'8px'}}>
+              <table>
+                <thead><tr><th>PRODUCT</th><th>QTY</th><th>UNIT PRICE</th><th>LINE TOTAL</th><th></th></tr></thead>
+                <tbody>
+                  {form.items.map((it,idx)=>(
+                    <tr key={it.productId||idx}>
+                      <td><b style={{fontSize:'12px'}}>{it.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>cost {format(it.cost)}</small></td>
+                      <td><input type="number" min="1" step="1" value={it.qty} onChange={e=>setItem(idx,{qty:e.target.value})} style={{width:'74px',minHeight:'32px',border:'1px solid #e7ece8',borderRadius:'8px',padding:'0 8px'}}/></td>
+                      <td><input type="number" min="0" step="0.01" value={it.unitPrice} onChange={e=>setItem(idx,{unitPrice:e.target.value})} style={{width:'96px',minHeight:'32px',border:'1px solid #e7ece8',borderRadius:'8px',padding:'0 8px'}}/></td>
+                      <td><b>{format(Number(it.qty||0)*Number(it.unitPrice||0))}</b></td>
+                      <td><button className="btn small danger" onClick={()=>removeItem(idx)} title="Remove this item"><Trash2 size={12}/></button></td>
+                    </tr>
+                  ))}
+                  {form.items.length===0 && <tr><td colSpan={5} style={{color:'#6b7d76',fontSize:'12px'}}>No items — add at least one to keep this sale.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:'10px'}}>
+            <div style={{padding:'10px',background:'#f9fbf9',border:'1px solid #e7ece8',borderRadius:'8px',fontSize:'12px'}}>
+              <b style={{fontSize:'12px'}}>Was recorded</b>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:'6px'}}><span>Total</span><b>{format(sale.total)}</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:'4px'}}><span>Seller</span><b>{sale.cashier}</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:'4px'}}><span>Payment</span><b>{sale.payment}</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:'4px'}}><span>Items</span><b>{saleUnits(sale)} units</b></div>
+            </div>
+            <div style={{padding:'10px',background:'#ecfdf5',border:'1px solid #a7f3d0',borderRadius:'8px',fontSize:'12px'}}>
+              <b style={{fontSize:'12px'}}>After correction</b>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:'6px'}}><span>Total</span><b>{format(total)}</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:'4px'}}><span>Seller</span><b>{employees.find(e=>e.id===form.cashierId)?.name||sale.cashier}</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:'4px'}}><span>Payment</span><b>{form.payment}</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',marginTop:'4px'}}><span>Items</span><b>{units} units</b></div>
+            </div>
+          </div>
+          <div style={{fontSize:'11px',color:'#6b7d76'}}>Subtotal {format(subtotal)} · discount {format(discount)} · total <b style={{color:'#0f2320'}}>{format(total)}</b>{Number(total)!==Number(sale.total||0) && <> · difference <b style={{color:total>Number(sale.total||0)?'#065f46':'#991b1b'}}>{total>Number(sale.total||0)?'+':''}{format(total-Number(sale.total||0))}</b></>}</div>
+
+          <div className="field"><label>Reason for correction *</label>
+            <input value={form.reason} onChange={e=>set({reason:e.target.value})} placeholder="e.g. Wrong quantity at checkout — customer bought 2 not 3" required/>
+          </div>
+          {(sale.corrections||[]).length>0 && (
+            <div style={{padding:'10px',background:'#f9fbf9',border:'1px solid #e7ece8',borderRadius:'8px',fontSize:'11px'}}>
+              <b style={{fontSize:'12px'}}>Previous corrections</b>
+              {[...(sale.corrections||[])].reverse().map(c=>(
+                <div key={c.id} style={{marginTop:'6px',color:'#334155'}}>
+                  <b>{c.by}</b> · {new Date(c.at).toLocaleString('en-GH')} · {format(c.before.total)} → {format(c.after.total)}
+                  <div style={{color:'#6b7d76'}}>{c.reason}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {err && <div role="alert" style={{padding:'10px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'8px',color:'#991b1b',fontSize:'12px'}}>{err}</div>}
+        </div>
+        <div className="modal-foot" style={{flexWrap:'wrap',gap:'8px'}}>
+          {confirmDelete ? (
+            <div style={{display:'flex',gap:'6px',alignItems:'center',marginRight:'auto',flexWrap:'wrap'}}>
+              <span style={{fontSize:'12px',color:'#991b1b',fontWeight:700}}>Delete {sale.invoiceNumber} and restore its stock?</span>
+              <button className="btn small danger" onClick={()=>{ if(onDelete(sale)===false) setErr('Could not delete this sale'); }}><Trash2 size={12}/> Yes, delete</button>
+              <button className="btn small" onClick={()=>setConfirmDelete(false)}>Keep sale</button>
+            </div>
+          ) : (
+            <button className="btn small danger" style={{marginRight:'auto'}} onClick={()=>setConfirmDelete(true)}><Trash2 size={12}/> Delete sale</button>
+          )}
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={submit}><Check size={14}/> Save correction</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InvoiceModal({sale,shop=SHOP,receiptFooter='',onClose,onPrintReceipt,onEditSale}){
   const subtotal = sale.subtotal||sale.total;
   return (
     <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
@@ -2354,8 +2742,14 @@ function InvoiceModal({sale,shop=SHOP,receiptFooter='',onClose,onPrintReceipt}){
           {sale.items?.map((it,i)=><div key={i} className="invoice-line"><span>{it.name}</span><span>{it.qty}</span><span>{format(it.unitPrice)}</span><span>{format(it.lineTotal)}</span></div>)}
           {(sale.items?.length||0)>0 && <div className="invoice-line" style={{borderTop:'1px solid #e7ece8',background:'#f9fbf9',fontWeight:800}}><span>Totals</span><span>{sale.items.reduce((s,it)=>s+Number(it.qty||0),0)}</span><span style={{color:'#6b7d76'}}>—</span><span>{format(sale.items.reduce((s,it)=>s+Number(it.lineTotal||0),0))}</span></div>}
           <div className="invoice-tot"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{sale.discount>0 && <div><span>Discount</span><b>-{format(sale.discount)}</b></div>}<div className="grand"><span>Total paid</span><b>{format(sale.total)}</b></div></div>
+          {(sale.corrections||[]).length>0 && (
+            <div style={{marginTop:'12px',padding:'10px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',fontSize:'11px',color:'#92400e'}}>
+              <b>Corrected {sale.corrections.length}×</b> · last by {sale.editedBy} on {new Date(sale.editedAt).toLocaleString('en-GH')}
+              <div style={{marginTop:'4px'}}>{sale.corrections[sale.corrections.length-1].reason}</div>
+            </div>
+          )}
         </div>
-        <div style={{padding:'12px 20px',borderTop:'1px solid #e7ece8',background:'#fcfdfc',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'11px',color:'#6b7d76',display:'flex',alignItems:'center',gap:'5px'}}><ShieldCheck size={12}/> {receiptFooter || `Thank you for shopping with ${shop.name}!`}</span><div style={{display:'flex',gap:'6px'}}><button className="btn small no-print" onClick={()=>onPrintReceipt(sale)}><Printer size={14}/> Print receipt</button><button className="btn small primary no-print" onClick={()=>window.print()}><Printer size={14}/> Print invoice</button></div></div>
+        <div style={{padding:'12px 20px',borderTop:'1px solid #e7ece8',background:'#fcfdfc',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'11px',color:'#6b7d76',display:'flex',alignItems:'center',gap:'5px'}}><ShieldCheck size={12}/> {receiptFooter || `Thank you for shopping with ${shop.name}!`}</span><div style={{display:'flex',gap:'6px'}}>{onEditSale && <button className="btn small no-print" onClick={()=>onEditSale(sale)} title="Owner only — correct or delete this sale"><Edit2 size={14}/> Correct</button>}<button className="btn small no-print" onClick={()=>onPrintReceipt(sale)}><Printer size={14}/> Print receipt</button><button className="btn small primary no-print" onClick={()=>window.print()}><Printer size={14}/> Print invoice</button></div></div>
       </div>
     </div>
   );
@@ -2378,6 +2772,7 @@ function ReceiptModal({sale,shop=SHOP,receiptFooter='',onClose}){
         {sale.items?.map((it,i)=><div key={i} className="receipt-item"><span>{it.name} × {it.qty}</span><b>{format(it.lineTotal)}</b></div>)}
         {sale.discount>0 && <div className="receipt-item"><span>Discount</span><b>-{format(sale.discount)}</b></div>}
         <div className="receipt-total"><span>Total amount</span><b>{format(sale.total)}</b></div>
+        {(sale.corrections||[]).length>0 && <div style={{marginTop:'8px',padding:'6px 8px',border:'1px dashed #fcd34d',borderRadius:'6px',background:'#fffbeb',fontSize:'10px',color:'#92400e'}}><b>Corrected receipt</b> · {sale.editedBy} · {new Date(sale.editedAt).toLocaleDateString('en-GH')}<br/>{sale.corrections[sale.corrections.length-1].reason}</div>}
         <div style={{textAlign:'center',marginTop:'12px'}}><small>{receiptFooter || `Thank you for shopping with ${shop.name}!`}</small><br/><small>Sale ref {sale.id}</small><br/><button className="btn small primary no-print" style={{marginTop:'8px'}} onClick={()=>window.print()}><Printer size={14}/> Print receipt</button></div>
       </div>
     </div>
