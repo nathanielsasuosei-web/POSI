@@ -7,13 +7,14 @@ import {
   ArrowRight, ChevronDown, Download, Printer, ShieldCheck, CalendarDays, UserRound,
   CheckCircle2, DollarSign, PiggyBank, Landmark, Mail, Send, Eye, Edit2, Trash2, UserPlus,
   Bell, ClipboardList, History, Coins, AlarmClock, TrendingDown, KeyRound, Lock, EyeOff,
-  Wrench, Settings, MoreHorizontal
+  Wrench, Settings, MoreHorizontal, Sparkles
 } from 'lucide-react';
 import './style.css';
 import { useOfflineSupport, OfflineBanner, OfflineChip } from './offline.jsx';
 import {
   DEFAULT_SETTINGS, DEFAULT_MAINTENANCE, TimelinePage, LeadsPage, MaintenancePage, SettingsPage
 } from './operations.jsx';
+import { AIAssistantPage } from './assistant.jsx';
 
 // Storage keys
 const K = {
@@ -331,6 +332,8 @@ function App({offline}){
   useEffect(()=>{
     setSelectedInvoice(null); setSelectedReceipt(null); setEditingSale(null);
     setFilterSales({search:'',payment:'All',date:'All',cashier:'All'});
+    const emp = employees.find(e=>e.id===userId);
+    setView(emp ? (emp.role==='owner' ? 'dashboard' : 'pos') : 'pos');
   },[userId]);
 
   // Older locally saved staff records have no username/passwordHash. Give them
@@ -906,6 +909,7 @@ function App({offline}){
     {id:'gift',label:'Gift Cards & Money Owed',icon:Gift},
     {id:'staff',label:'Staff Tracking',icon:UserCircle},
     {id:'reports',label:'Business Reports',icon:BarChart3},
+    {id:'assistant',label:'AI Assistant',icon:Sparkles},
     {id:'messages',label:'Messages',icon:MessageSquare},
     {id:'settings',label:'Settings',icon:Settings},
   ];
@@ -1017,6 +1021,7 @@ function App({offline}){
           {view==='gift' && isOwner && <GiftAccountPage giftCards={giftCards} customers={customers} sales={sales} onAdd={()=>setShowGiftModal(true)} onPayAccount={payAccount} />}
           {view==='staff' && isOwner && <StaffPage employees={employees} sales={sales} attendance={attendance} currentUser={currentUser} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} onViewSales={setStaffSales} onCredentials={setCredentialsFor} />}
           {view==='reports' && isOwner && <ReportsPage sales={sales} products={products} customers={customers} giftCards={giftCards} expenses={expenses} />}
+          {view==='assistant' && isOwner && <AIAssistantPage data={{sales,products,customers,employees,expenses,giftCards,stockMoves,maintenance,attendance}} shop={shop} currentUser={currentUser} />}
           {view==='messages' && <MessagesPage messages={messages} employees={employees} currentUser={currentUser} isOwner={isOwner} onSend={()=>setShowMessageModal(true)} onMarkRead={markRead} />}
         </div>
 
@@ -1159,7 +1164,7 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
 
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> OWNER OVERVIEW · {fullDate().toUpperCase()}</div><h1>Your shop, at a glance</h1><p>Sales, customers, stock and equipment in one owner command centre. All cashier activity is combined here.</p></div><div className="dashboard-actions"><button className="btn" onClick={()=>setView('invoices')}><FileText size={15}/> Sales history</button><button className="btn" onClick={()=>setView('timeline')}><History size={15}/> Timeline</button><button className="btn" onClick={()=>setView('maintenance')}><Wrench size={15}/> Maintenance{maintenanceAttention>0&&<span className="button-count">{maintenanceAttention}</span>}</button><button className="btn primary" onClick={()=>setView('pos')}><ShoppingCart size={16}/> New Sale</button></div></div>
+      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> OWNER OVERVIEW · {fullDate().toUpperCase()}</div><h1>Your shop, at a glance</h1><p>Sales, customers, stock and equipment in one owner command centre. All cashier activity is combined here.</p></div><div className="dashboard-actions"><button className="btn" onClick={()=>setView('assistant')}><Sparkles size={15}/> Ask AI</button><button className="btn" onClick={()=>setView('invoices')}><FileText size={15}/> Sales history</button><button className="btn" onClick={()=>setView('timeline')}><History size={15}/> Timeline</button><button className="btn" onClick={()=>setView('maintenance')}><Wrench size={15}/> Maintenance{maintenanceAttention>0&&<span className="button-count">{maintenanceAttention}</span>}</button><button className="btn primary" onClick={()=>setView('pos')}><ShoppingCart size={16}/> New Sale</button></div></div>
 
       <div className="grid metrics" style={{marginBottom:'14px'}}>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><Wallet size={16}/></div><span style={{fontSize:'10px',fontWeight:800,color:'#065f46',background:'#ecfdf5',padding:'3px 7px',borderRadius:'20px'}}>TODAY</span></div><div className="metric-label">Sales today (combined)</div><div className="metric-value">{format(totalToday)}</div><div className="metric-note">{dailyChange!==null&&<em>{dailyChange>=0?<TrendingUp size={12}/>:<TrendingDown size={12}/>} {dailyChange>=0?'+':''}{dailyChange.toFixed(0)}%</em>} {todaySales.length} transactions from all cashiers</div></div>
