@@ -463,7 +463,8 @@ function App({offline}){
     if(!isOwner){ flash('Only the owner can manage product records'); return }
     if(editingProduct){
       const prevStock = editingProduct.stock||0;
-      setProducts(p=>p.map(x=>x.id===prod.id?prod:x));
+      const record = {...prod, edits:Number(editingProduct.edits||0)+1, updatedAt:new Date().toISOString()};
+      setProducts(p=>p.map(x=>x.id===record.id?record:x));
       if(prod.stock!==prevStock) logStockMove(prod,'adjustment',prod.stock-prevStock,'Edited in product record');
       addActivity({type:'product',title:`${currentUser?.name} updated product`,detail:prod.name});
       flash(`${prod.name} updated`);
@@ -1201,6 +1202,16 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
   },{stock:0,reorder:0,cost:0,price:0,profit:0,costValue:0,priceValue:0,low:0,out:0,inStock:0,expired:0,soon:0,expiryOk:0,noExpiry:0,expiredValue:0});
   const totalMargin = totals.price ? (totals.profit/totals.price*100) : 0;
   const totalCats = new Set(filtered.map(p=>p.category)).size;
+  // Action totals: what the Stock / ± Adj / Edit buttons have done for these items.
+  const filteredIds = new Set(filtered.map(p=>p.id));
+  const actionTotals = stockMoves.filter(m=>filteredIds.has(m.productId)).reduce((t,m)=>{
+    const qty = Number(m.qty||0);
+    if(m.type==='restock'){ t.stockUnits += qty; t.stockClicks += 1 }
+    else if(m.type==='adjustment'){ t.adjUnits += qty; t.adjClicks += 1 }
+    else if(m.type==='sale'){ t.salesUnits += Math.abs(qty); t.sales += 1 }
+    return t;
+  },{stockUnits:0,stockClicks:0,adjUnits:0,adjClicks:0,salesUnits:0,sales:0});
+  const editTotal = filtered.reduce((t,p)=>t+Number(p.edits||0),0);
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><Package size={12}/> {isOwner?'STOCK & ITEM LIST':'ITEM LIST'}</div><h1>{isOwner?'Stock management & item records':'Item list'}</h1>{!isOwner && <p>Browse products, prices and availability. Cost, profit and reorder tracking are managed by the owner.</p>}</div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
@@ -1241,7 +1252,7 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
               {isOwner&&<td><div style={{display:'flex',gap:'4px'}}>
                 <button className="btn small" title="Restock in" onClick={()=>onStock(p,'restock')}><Plus size={12}/> Stock</button>
                 <button className="btn small" title="Adjust (damage/loss/count)" onClick={()=>onStock(p,'adjust')}>± Adj</button>
-                <button className="btn small" onClick={()=>onEdit(p)}><Edit2 size={12}/> Edit</button>
+                <button className="btn small" onClick={()=>onEdit(p)} title={p.edits?`Edited ${p.edits} time${p.edits===1?'':'s'}${p.updatedAt?` · last ${readableDate(String(p.updatedAt).slice(0,10))}`:''}`:'Not edited yet'}><Edit2 size={12}/> Edit{p.edits?<small style={{fontSize:'9px',fontWeight:800,color:'#0f766e'}}>{p.edits}</small>:null}</button>
                 <button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm(`Delete ${p.name}?`)) onDelete(p.id)}}><Trash2 size={12}/></button>
               </div></td>}
             </tr>
@@ -1259,7 +1270,11 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
             {isOwner&&<td><b style={{color:totals.profit>0?'#065f46':'#991b1b'}}>{format(totals.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{totalMargin.toFixed(0)}% · on hand {format(totals.priceValue-totals.costValue)}</small></td>}
             <td><span style={{fontSize:'10px',fontWeight:700,color:'#991b1b'}}>{totals.expired} expired</span> <span style={{fontSize:'10px',fontWeight:700,color:'#92400e'}}>· {totals.soon} soon</span>{isOwner && totals.expiredValue>0 && <small style={{display:'block',fontSize:'10px',color:'#991b1b'}}>{format(totals.expiredValue)} at cost</small>}</td>
             <td><span style={{fontSize:'10px',fontWeight:700,color:'#065f46'}}>{totals.inStock} in</span> <span style={{fontSize:'10px',fontWeight:700,color:'#92400e'}}>· {totals.low} low</span> <span style={{fontSize:'10px',fontWeight:700,color:'#991b1b'}}>· {totals.out} out</span></td>
-            {isOwner&&<td></td>}
+            {isOwner&&<td style={{fontSize:'9px',lineHeight:1.5,whiteSpace:'nowrap'}}>
+              <span style={{display:'block',fontWeight:800,color:'#1e40af'}}>Stock <span style={{color:'#065f46'}}>+{actionTotals.stockUnits}</span> <small style={{color:'#6b7d76',fontWeight:600}}>({actionTotals.stockClicks})</small></span>
+              <span style={{display:'block',fontWeight:800,color:'#92400e'}}>Adj <span style={{color:actionTotals.adjUnits<0?'#991b1b':'#065f46'}}>{actionTotals.adjUnits>0?'+':''}{actionTotals.adjUnits}</span> <small style={{color:'#6b7d76',fontWeight:600}}>({actionTotals.adjClicks})</small></span>
+              <span style={{display:'block',fontWeight:800,color:editTotal?'#0f766e':'#6b7d76'}}>{editTotal} edit{editTotal===1?'':'s'}</span>
+            </td>}
           </tr>
         </tfoot>}
         </table></div>
