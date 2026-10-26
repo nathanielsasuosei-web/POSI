@@ -669,7 +669,7 @@ function App({offline}){
     {id:'inventory',label:'Stock & Items',icon:Package},
     {id:'leads',label:'Customer Leads',icon:TrendingUp},
     {id:'customers',label:'Customers',icon:Users},
-    {id:'invoices',label:'Sales & Receipts',icon:FileText},
+    {id:'invoices',label:'Sales History',icon:FileText},
     {id:'expenses',label:'Expenses',icon:Coins},
     {id:'maintenance',label:'Maintenance',icon:Wrench},
     {id:'timeline',label:'Activity Timeline',icon:History},
@@ -928,7 +928,7 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
 
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> OWNER OVERVIEW · {fullDate().toUpperCase()}</div><h1>Your shop, at a glance</h1><p>Sales, customers, stock and equipment in one owner command centre. All cashier activity is combined here.</p></div><div className="dashboard-actions"><button className="btn" onClick={()=>setView('timeline')}><History size={15}/> Timeline</button><button className="btn" onClick={()=>setView('maintenance')}><Wrench size={15}/> Maintenance{maintenanceAttention>0&&<span className="button-count">{maintenanceAttention}</span>}</button><button className="btn primary" onClick={()=>setView('pos')}><ShoppingCart size={16}/> New Sale</button></div></div>
+      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> OWNER OVERVIEW · {fullDate().toUpperCase()}</div><h1>Your shop, at a glance</h1><p>Sales, customers, stock and equipment in one owner command centre. All cashier activity is combined here.</p></div><div className="dashboard-actions"><button className="btn" onClick={()=>setView('invoices')}><FileText size={15}/> Sales history</button><button className="btn" onClick={()=>setView('timeline')}><History size={15}/> Timeline</button><button className="btn" onClick={()=>setView('maintenance')}><Wrench size={15}/> Maintenance{maintenanceAttention>0&&<span className="button-count">{maintenanceAttention}</span>}</button><button className="btn primary" onClick={()=>setView('pos')}><ShoppingCart size={16}/> New Sale</button></div></div>
 
       <div className="grid metrics" style={{marginBottom:'14px'}}>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><Wallet size={16}/></div><span style={{fontSize:'10px',fontWeight:800,color:'#065f46',background:'#ecfdf5',padding:'3px 7px',borderRadius:'20px'}}>TODAY</span></div><div className="metric-label">Sales today (combined)</div><div className="metric-value">{format(totalToday)}</div><div className="metric-note">{dailyChange!==null&&<em>{dailyChange>=0?<TrendingUp size={12}/>:<TrendingDown size={12}/>} {dailyChange>=0?'+':''}{dailyChange.toFixed(0)}%</em>} {todaySales.length} transactions from all cashiers</div></div>
@@ -1363,7 +1363,96 @@ function CustomersPage({customers,sales,products=[],isOwner,onEdit,onAdd,onPayAc
   );
 }
 
-function InvoicesPage({sales,products=[],isOwner,filter,setFilter,onViewInvoice,onViewReceipt,employees}){
+// Month calendar for sales history: per-day revenue, click a day or drag a range.
+function SalesCalendar({sales,products=[],from,to,onSelect,onClear,isOwner}){
+  const [cursor,setCursor]=useState(()=> (from||to||todayKey()).slice(0,7));
+  useEffect(()=>{ if(from) setCursor(from.slice(0,7)) },[from]);
+  const daily = useMemo(()=>{
+    const map=new Map();
+    sales.forEach(s=>{
+      const cur = map.get(s.date) || {total:0,count:0,units:0,profit:0};
+      cur.total += Number(s.total||0);
+      cur.count += 1;
+      cur.units += saleUnits(s);
+      cur.profit += saleProfit(s,products);
+      map.set(s.date,{...cur});
+    });
+    return map;
+  },[sales,products]);
+  const [year,month] = cursor.split('-').map(Number);
+  const monthLabel = new Date(year,month-1,1).toLocaleDateString('en-GH',{month:'long',year:'numeric'});
+  const firstDow = (new Date(year,month-1,1).getDay()+6)%7; // Monday first
+  const daysInMonth = new Date(year,month,0).getDate();
+  const dayKey = (d)=>`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const monthKeys = Array.from({length:daysInMonth},(_,i)=>dayKey(i+1));
+  const monthStats = monthKeys.reduce((t,k)=>{ const d=daily.get(k); if(d){ t.total+=d.total; t.count+=d.count; t.units+=d.units; t.profit+=d.profit } return t },{total:0,count:0,units:0,profit:0});
+  const shiftMonth = (n)=>{ const d=new Date(year,month-1+n,1); setCursor(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`) };
+  const selStart = from || '';
+  const selEnd = to || from || '';
+  const isSelected = (k)=> selStart && k>=selStart && k<=selEnd;
+  // First click starts a range, a second click completes it; clicking a new day
+  // while a complete range is shown starts over.
+  const pick = (k)=>{
+    if(!from || (from && to)) onSelect(k,'');
+    else onSelect(from<=k?from:k, from<=k?k:from);
+  };
+  const today = todayKey();
+  const totalSales = sales.length;
+  return (
+    <div style={{marginTop:'12px'}}>
+      <div className="cal-head">
+        <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+          <button className="btn icon small" onClick={()=>shiftMonth(-1)} title="Previous month"><ChevronDown size={14} style={{transform:'rotate(90deg)'}}/></button>
+          <b style={{fontSize:'13px',minWidth:'140px',textAlign:'center'}}>{monthLabel}</b>
+          <button className="btn icon small" onClick={()=>shiftMonth(1)} title="Next month"><ChevronDown size={14} style={{transform:'rotate(-90deg)'}}/></button>
+          <button className="btn small ghost" onClick={()=>setCursor(today.slice(0,7))}>This month</button>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',fontSize:'11px',color:'#6b7d76'}}>
+          <span><b style={{color:'#0f766e'}}>{format(monthStats.total)}</b> · {monthStats.count} sale{monthStats.count===1?'':'s'} · {monthStats.units} units{isOwner?` · profit ${format(monthStats.profit)}`:''}</span>
+          {(from||to) && <button className="btn small ghost" onClick={onClear}><X size={12}/> Clear date filter</button>}
+        </div>
+      </div>
+      <div className="cal-grid">
+        {['MON','TUE','WED','THU','FRI','SAT','SUN'].map(d=><div key={d} className="cal-dow">{d}</div>)}
+        {Array.from({length:firstDow}).map((_,i)=><div key={'pad'+i} className="cal-day muted"/>)}
+        {monthKeys.map(k=>{
+          const d = daily.get(k);
+          const day = Number(k.slice(-2));
+          return <button key={k}
+            className={`cal-day ${d?'has-sales':''} ${k===today?'today':''} ${isSelected(k)?'sel':''}`}
+            onClick={()=>pick(k)}
+            title={d?`${d.count} sale${d.count===1?'':'s'} · ${format(d.total)}${d.units?` · ${d.units} units`:''}`:'No sales'}>
+            <b>{day}</b>
+            {d ? <><small style={{fontWeight:700}}>{format(d.total)}</small><small>{d.count} sale{d.count===1?'':'s'}</small></> : <small style={{opacity:.5}}>—</small>}
+          </button>
+        })}
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',gap:'8px',flexWrap:'wrap',fontSize:'10px',color:'#6b7d76',marginTop:'8px'}}>
+        <span>Click a day to filter it · then click another day to select a range (click the same day again for a single day){totalSales?` · ${totalSales} sale${totalSales===1?'':'s'} in this filtered list`:''}</span>
+        <span>{selStart? (selEnd && selEnd!==selStart ? `${readableDate(selStart)} → ${readableDate(selEnd)}` : readableDate(selStart)) : 'All dates'}</span>
+      </div>
+    </div>
+  );
+}
+
+function InvoicesPage({sales:salesAll,products=[],isOwner,filter,setFilter,onViewInvoice,onViewReceipt,employees}){
+  const [range,setRange]=useState({from:'',to:''});
+  const [showCalendar,setShowCalendar]=useState(true);
+  const sales = useMemo(()=>{
+    if(!range.from) return salesAll;
+    const end = range.to || range.from;
+    return salesAll.filter(s=>s.date>=range.from && s.date<=end);
+  },[salesAll,range]);
+  const clearRange = ()=>{ setRange({from:'',to:''}); setFilter(f=>({...f,date:'All'})) };
+  const presetRange = (id)=>{
+    const now = new Date();
+    const iso = (d)=>d.toISOString().slice(0,10);
+    if(id==='all') return clearRange();
+    if(id==='Today') return setRange({from:todayKey(),to:todayKey()});
+    if(id==='Yesterday'){ const d=new Date(now); d.setDate(d.getDate()-1); return setRange({from:iso(d),to:iso(d)}) }
+    if(id==='Week'){ const d=new Date(now); d.setDate(d.getDate()-6); return setRange({from:iso(d),to:todayKey()}) }
+    if(id==='Month') return setRange({from:now.toISOString().slice(0,7)+'-01',to:todayKey()});
+  };
   const total = sales.reduce((s,x)=>s+Number(x.total||0),0);
   const totals = sales.reduce((t,x)=>{
     t.items += saleUnits(x);
@@ -1375,14 +1464,27 @@ function InvoicesPage({sales,products=[],isOwner,filter,setFilter,onViewInvoice,
   const totalMargin = totals.total ? (totals.profit/totals.total*100) : 0;
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history':'My sales history — today'}</h1></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><span className="kpi"><Package size={14}/> <b>{totals.items.toLocaleString()}</b> products bought</span>{isOwner && <span className="kpi" style={{background:'#ecfdf5'}}><PiggyBank size={14}/> <b>{format(totals.profit)}</b> profit</span>}<button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Units bought','Payment','Total',...(isOwner?['Profit']:[])]; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,saleUnits(s),s.payment,s.total,...(isOwner?[saleProfit(s,products).toFixed(2)]:[])]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
+      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> {isOwner?'SALES HISTORY · OWNER':'SALES HISTORY'}</div><h1>{isOwner?'Sales history & receipts':'My sales history — today'}</h1>{isOwner && <p>Every invoice from every cashier, filterable by calendar date, employee, payment and search.</p>}</div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span>{range.from && <span className="kpi" style={{background:'#e6f4f1',color:'#0f766e'}}><CalendarDays size={14}/> <b>{range.to && range.to!==range.from?`${readableDate(range.from)} → ${readableDate(range.to)}`:readableDate(range.from)}</b></span>}<span className="kpi"><Package size={14}/> <b>{totals.items.toLocaleString()}</b> products bought</span>{isOwner && <span className="kpi" style={{background:'#ecfdf5'}}><PiggyBank size={14}/> <b>{format(totals.profit)}</b> profit</span>}<button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Units bought','Payment','Total',...(isOwner?['Profit']:[])]; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,saleUnits(s),s.payment,s.total,...(isOwner?[saleProfit(s,products).toFixed(2)]:[])]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${range.from?(range.to&&range.to!==range.from?`${range.from}_to_${range.to}`:range.from):todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
+
+      <div className="card" style={{marginBottom:'14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+          <div><h2 style={{display:'flex',alignItems:'center',gap:'7px'}}><CalendarDays size={16} color="#0f766e"/> Sales calendar</h2><p className="sub">Click a day, or click two days to select a range — the table and totals follow</p></div>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+            {[['Today','Today'],['Yesterday','Yesterday'],['Week','Last 7 days'],['Month','This month'],['all','All dates']].map(([id,label])=>
+              <button key={id} className="btn small ghost" onClick={()=>presetRange(id)}>{label}</button>)}
+            <button className="btn small" onClick={()=>setShowCalendar(v=>!v)}>{showCalendar?'Hide':'Show'} calendar</button>
+          </div>
+        </div>
+        {showCalendar && <SalesCalendar sales={salesAll} products={products} isOwner={isOwner} from={range.from} to={range.to}
+          onSelect={(a,b)=>setRange({from:a,to:b})} onClear={clearRange}/>}
+      </div>
 
       <div className="card">
         <div className="toolbar">
           <div className="search" style={{maxWidth:'320px'}}><Search size={16}/><input value={filter.search} onChange={e=>setFilter(f=>({...f,search:e.target.value}))} onKeyDown={selectOnEnter} placeholder="Search invoice, customer, seller…"/></div>
           {isOwner && <select value={filter.cashier||'All'} onChange={e=>setFilter(f=>({...f,cashier:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All employees</option>{employees.filter(e=>e.role!=='owner').map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>}
           <select value={filter.payment} onChange={e=>setFilter(f=>({...f,payment:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option><option>Cash</option><option>MoMo</option><option>Gift</option></select>
-          {isOwner && <select value={filter.date} onChange={e=>setFilter(f=>({...f,date:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>}
+          {isOwner && <select value={filter.date} onChange={e=>{ setFilter(f=>({...f,date:e.target.value})); setRange({from:'',to:''}) }} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>}
         </div>
         <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>SELLER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th>{isOwner&&<th>PROFIT</th>}<th>STATUS</th><th></th></tr></thead><tbody>
           {sales.map(s=>{ const profit = saleProfit(s,products); return <tr key={s.id}><td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.id}</small></td><td><b>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td><td>{s.customerName}</td><td>{s.cashier}</td><td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td><td><b>{saleUnits(s)}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>bought</small></td><td><b>{format(s.total)}</b></td>{isOwner&&<td><b style={{color:profit>0?'#065f46':profit<0?'#991b1b':'#6b7d76'}}>{format(profit)}</b></td>}<td><span className="status ok"><i/>Paid</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td></tr>})}
@@ -1396,7 +1498,7 @@ function InvoicesPage({sales,products=[],isOwner,filter,setFilter,onViewInvoice,
           <td style={{fontSize:'10px',color:'#6b7d76'}}>all paid</td><td></td>
         </tr></tfoot>}
         </table></div>
-        {sales.length===0 && <div className="empty-state"><FileText size={20}/><b>No sales found</b><small>{isOwner?'Try different filters':'Sales you complete today will appear here'}</small></div>}
+        {sales.length===0 && <div className="empty-state"><FileText size={20}/><b>No sales found</b><small>{range.from?'No sales on the selected date range — pick another day on the calendar':'Try different filters'}</small></div>}
       </div>
     </div>
   );

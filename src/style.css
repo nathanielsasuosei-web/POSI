@@ -139,6 +139,21 @@ tbody td{padding:11px 10px;border-bottom:1px solid #f0f3f0;color:#3a4f49;white-s
 tbody tr:last-child td{border-bottom:0}
 tfoot td{padding:10px;background:#f9fbf9;border-top:1px solid var(--line);color:#233a33;white-space:nowrap}
 tfoot tr:first-child td{border-top:2px solid #dfe7e2}
+
+/* Sales history calendar */
+.cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:12px 0 10px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cal-dow{font-size:10px;font-weight:800;letter-spacing:.5px;color:#6b7d76;text-align:center;padding-bottom:2px}
+.cal-day{min-height:62px;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:6px;border:1px solid #e7ece8;border-radius:8px;background:#fff;font-size:11px;color:#3a4f49;cursor:pointer;transition:border-color .12s,background .12s}
+.cal-day:hover{border-color:#0f766e}
+.cal-day b{font-size:12px;font-weight:800}
+.cal-day small{font-size:9px;line-height:1.25;color:#6b7d76;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cal-day.muted{background:#fbfcfb;border-style:dashed;border-color:#f0f3f0;cursor:default}
+.cal-day.has-sales{background:#f6fffe;border-color:#ccede8}
+.cal-day.today{box-shadow:inset 0 0 0 2px #0f766e}
+.cal-day.sel{background:#0f766e;border-color:#0f766e;color:#fff}
+.cal-day.sel small{color:#d3f2ec}
+@media (max-width:640px){ .cal-day{min-height:52px;padding:4px} .cal-day small:nth-of-type(2){display:none} }
 .status{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
 .status i{width:6px;height:6px;border-radius:50%;background:currentColor}
 .status.ok{background:#ecfdf5;color:#065f46}
