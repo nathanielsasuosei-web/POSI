@@ -191,6 +191,11 @@ const starterStockMoves = [
   { id:'sm1', productId:'p1', productName:'Paracetamol 500mg', type:'restock', qty:20, date:daysAgo(2), time:'09:15', by:'Abena Mensah', note:'Ernest Chemists delivery' },
   { id:'sm2', productId:'p5', productName:'Malaria Test Kit', type:'adjustment', qty:-2, date:daysAgo(1), time:'16:40', by:'Ama Boateng', note:'Damaged kits' },
   { id:'sm3', productId:'p11', productName:'Antiseptic Cream 30g', type:'restock', qty:24, date:daysAgo(1), time:'11:05', by:'Abena Mensah', note:'Ernest Chemists delivery' },
+  { id:'sm4', productId:'p1', productName:'Paracetamol 500mg', type:'sale', qty:-1, cost:7, unitPrice:12.5, date:todayKey(), time:'10:42', by:'Ama Boateng', note:'POS-02487' },
+  { id:'sm5', productId:'p7', productName:'Vitamin C 1000mg', type:'sale', qty:-2, cost:32, unitPrice:45, date:todayKey(), time:'10:42', by:'Ama Boateng', note:'POS-02487' },
+  { id:'sm6', productId:'p2', productName:'Ibuprofen 400mg', type:'sale', qty:-2, cost:11, unitPrice:18, date:todayKey(), time:'10:31', by:'Kwame Owusu', note:'POS-02486' },
+  { id:'sm7', productId:'p8', productName:'Digital Thermometer', type:'sale', qty:-1, cost:26, unitPrice:42, date:todayKey(), time:'10:31', by:'Kwame Owusu', note:'POS-02486' },
+  { id:'sm8', productId:'p9', productName:'Cough Syrup 100ml', type:'sale', qty:-1, cost:14, unitPrice:22, date:todayKey(), time:'09:18', by:'Kwame Owusu', note:'POS-02484' },
 ];
 
 const starterAttendance = [
@@ -399,7 +404,7 @@ function App({offline}){
 
   // Stock movements
   const logStockMove = (product, type, qty, note)=> {
-    setStockMoves(sm=>[{id:uid('sm'),productId:product.id,productName:product.name,type,qty,date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:note||''},...sm].slice(0,300));
+    setStockMoves(sm=>[{id:uid('sm'),productId:product.id,productName:product.name,type,qty,cost:Number(product.cost||0),unitPrice:Number(product.price||0),date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:note||''},...sm].slice(0,300));
   };
 
   const applyStockChange = ({product, mode, qty, note, cost})=>{
@@ -608,7 +613,7 @@ function App({offline}){
       if(!sold) return p;
       return {...p, stock: Math.max(0, p.stock - sold.qty)};
     }));
-    const soldMoves = cart.map(i=>({id:uid('sm'),productId:i.id,productName:i.name,type:'sale',qty:-i.qty,date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:saleId}));
+    const soldMoves = cart.map(i=>({id:uid('sm'),productId:i.id,productName:i.name,type:'sale',qty:-i.qty,cost:Number(i.cost||0),unitPrice:Number(i.price||0),date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:saleId}));
     setStockMoves(sm=>[...soldMoves,...sm].slice(0,300));
     const lowNow = cart.filter(i=>{
       const prod = products.find(p=>p.id===i.id);
@@ -1134,6 +1139,31 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
 function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,stockMoves,onEdit,onDelete,onAdd,onStock}){
   const [stockFilter,setStockFilter]=useState('All');
   const [expiryFilter,setExpiryFilter]=useState('All');
+  const [allMoves,setAllMoves]=useState(false);
+  // Value every movement at the item's cost price and, for sales, its profit.
+  const moveRows = stockMoves.map(m=>{
+    const prod = products.find(p=>p.id===m.productId);
+    const unitCost = Number(m.cost ?? prod?.cost ?? 0);
+    const unitPrice = Number(m.unitPrice ?? prod?.price ?? 0);
+    const qty = Number(m.qty||0);
+    const costValue = unitCost * qty;
+    const profit = m.type==='sale' ? (unitPrice-unitCost)*Math.abs(qty) : 0;
+    return {...m, unitCost, unitPrice, qty, costValue, profit};
+  });
+  const sortedMoves = [...moveRows].sort((a,b)=> (b.date+(b.time||'')).localeCompare(a.date+(a.time||'')));
+  const visibleMoves = allMoves ? sortedMoves : sortedMoves.slice(0,15);
+  const moveTotals = visibleMoves.reduce((t,m)=>{
+    t.qty += m.qty;
+    if(m.qty>0) t.qtyIn += m.qty; else t.qtyOut += m.qty;
+    t.costValue += m.costValue;
+    t.profit += m.profit;
+    t.revenue += m.type==='sale' ? m.unitPrice*Math.abs(m.qty) : 0;
+    if(m.type==='sale'){ t.sales += 1; t.soldUnits += Math.abs(m.qty); }
+    if(m.type==='restock') t.restocks += 1;
+    if(m.type==='adjustment') t.adjustments += 1;
+    return t;
+  },{qty:0,qtyIn:0,qtyOut:0,costValue:0,profit:0,revenue:0,sales:0,soldUnits:0,restocks:0,adjustments:0});
+  const moveMargin = moveTotals.revenue ? (moveTotals.profit/moveTotals.revenue*100) : 0;
   const filtered = products.filter(p=>{
     const matchCat = cat==='All'||p.category===cat;
     const q = search.toLowerCase();
@@ -1238,29 +1268,37 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
       </div>
 
       {isOwner && <div className="card" style={{marginTop:'14px'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div><h2>Stock movement log</h2><p className="sub">Every unit in and out — sales, restocks and adjustments</p></div><History size={16} color="#6b7d76"/></div>
-        <div className="table-wrap"><table><thead><tr><th>DATE</th><th>PRODUCT</th><th>TYPE</th><th>QTY</th><th>BY</th><th>NOTE</th></tr></thead><tbody>
-          {stockMoves.slice(0,15).map(m=>{
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',gap:'8px',flexWrap:'wrap'}}><div><h2>Stock movement log</h2><p className="sub">Every unit in and out — sales, restocks and adjustments, valued at cost price</p></div><div style={{display:'flex',gap:'6px',alignItems:'center'}}>{moveRows.length>15 && <button className="btn small ghost" onClick={()=>setAllMoves(v=>!v)}>{allMoves?`Show latest 15`:`View all ${moveRows.length}`}</button>}<History size={16} color="#6b7d76"/></div></div>
+        <div className="table-wrap"><table><thead><tr><th>DATE</th><th>PRODUCT</th><th>TYPE</th><th>QTY</th><th>UNIT COST</th><th>VALUE AT COST</th><th>PROFIT</th><th>BY</th><th>NOTE</th></tr></thead><tbody>
+          {visibleMoves.map(m=>{
             const t = stockMoveTypes[m.type]||stockMoveTypes.adjustment;
             return <tr key={m.id}>
               <td><b style={{fontSize:'12px'}}>{m.date===todayKey()?'Today':readableDate(m.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{m.time}</small></td>
-              <td>{m.productName}</td>
+              <td><b style={{fontSize:'12px'}}>{m.productName}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>sells at {format(m.unitPrice)}</small></td>
               <td><span className={`status ${m.type==='restock'?'info':m.type==='sale'?'ok':'warn'}`}><i/>{t.label}</span></td>
               <td><b style={{color:m.qty>0?'#065f46':'#991b1b'}}>{m.qty>0?`+${m.qty}`:m.qty}</b></td>
-              <td>{m.by}</td><td style={{color:'#6b7d76'}}>{m.note||'—'}</td>
+              <td>{format(m.unitCost)}</td>
+              <td><b style={{color:m.costValue>=0?'#065f46':'#991b1b'}}>{m.costValue>0?`+${format(m.costValue)}`:m.costValue<0?`-${format(Math.abs(m.costValue))}`:format(0)}</b></td>
+              <td>{m.type==='sale'
+                ? <b style={{color:m.profit>0?'#065f46':m.profit<0?'#991b1b':'#6b7d76'}}>{format(m.profit)}</b>
+                : <span style={{color:'#94a8a1',fontSize:'11px'}}>—</span>}</td>
+              <td>{m.by}</td><td style={{color:'#6b7d76',maxWidth:'220px',overflow:'hidden',textOverflow:'ellipsis'}}>{m.note||'—'}</td>
             </tr>
           })}
         </tbody>
-        {stockMoves.length>0 && <tfoot><tr>
-          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{Math.min(15,stockMoves.length)} of {stockMoves.length} moves</small></td>
-          <td style={{color:'#6b7d76'}}>—</td>
+        {visibleMoves.length>0 && <tfoot><tr>
+          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{visibleMoves.length} of {moveRows.length} moves</small></td>
+          <td style={{fontSize:'10px',color:'#6b7d76'}}>{moveTotals.sales} sales · {moveTotals.restocks} restocks · {moveTotals.adjustments} adj</td>
           <td style={{fontSize:'10px',color:'#6b7d76'}}>
-            <span style={{fontWeight:700,color:'#1e40af'}}>in +{stockMoves.slice(0,15).filter(m=>m.qty>0).reduce((s,m)=>s+Number(m.qty||0),0)}</span>{' · '}
-            <span style={{fontWeight:700,color:'#991b1b'}}>out {stockMoves.slice(0,15).filter(m=>m.qty<0).reduce((s,m)=>s+Number(m.qty||0),0)}</span>
+            <span style={{fontWeight:700,color:'#1e40af'}}>in +{moveTotals.qtyIn}</span>{' · '}
+            <span style={{fontWeight:700,color:'#991b1b'}}>out {moveTotals.qtyOut}</span>
           </td>
-          <td><b style={{color:stockMoves.slice(0,15).reduce((s,m)=>s+Number(m.qty||0),0)>=0?'#065f46':'#991b1b'}}>{(()=>{ const n=stockMoves.slice(0,15).reduce((s,m)=>s+Number(m.qty||0),0); return n>0?`+${n}`:n })()} net</b></td>
-          <td style={{color:'#6b7d76',fontSize:'10px'}}>{new Set(stockMoves.slice(0,15).map(m=>m.by)).size} staff</td>
-          <td style={{color:'#6b7d76',fontSize:'10px'}}>{stockMoves.slice(0,15).filter(m=>m.note).length} with notes</td>
+          <td><b style={{color:moveTotals.qty>=0?'#065f46':'#991b1b'}}>{moveTotals.qty>0?`+${moveTotals.qty}`:moveTotals.qty} net</b></td>
+          <td style={{fontSize:'10px',color:'#6b7d76'}}>{moveTotals.soldUnits?`${moveTotals.soldUnits} sold`:'—'}</td>
+          <td><b style={{color:moveTotals.costValue>=0?'#065f46':'#991b1b'}}>{moveTotals.costValue>0?`+${format(moveTotals.costValue)}`:`-${format(Math.abs(moveTotals.costValue))}`}</b></td>
+          <td><b style={{color:moveTotals.profit>0?'#065f46':moveTotals.profit<0?'#991b1b':'#6b7d76'}}>{format(moveTotals.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{moveMargin.toFixed(0)}% · on {format(moveTotals.revenue)}</small></td>
+          <td style={{color:'#6b7d76',fontSize:'10px'}}>{new Set(visibleMoves.map(m=>m.by)).size} staff</td>
+          <td style={{color:'#6b7d76',fontSize:'10px'}}>{visibleMoves.filter(m=>m.note).length} with notes</td>
         </tr></tfoot>}
         </table></div>
         {stockMoves.length===0 && <div className="empty-state"><History size={20}/><b>No stock moves yet</b><small>Restocks, sales and adjustments will appear here</small></div>}
