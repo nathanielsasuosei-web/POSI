@@ -1158,13 +1158,17 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
     if(m.qty>0) t.qtyIn += m.qty; else t.qtyOut += m.qty;
     t.costValue += m.costValue;
     t.profit += m.profit;
+    t.unitCost += m.unitCost;
     t.revenue += m.type==='sale' ? m.unitPrice*Math.abs(m.qty) : 0;
-    if(m.type==='sale'){ t.sales += 1; t.soldUnits += Math.abs(m.qty); }
-    if(m.type==='restock') t.restocks += 1;
-    if(m.type==='adjustment') t.adjustments += 1;
+    if(m.type==='sale'){ t.sales += 1; t.soldUnits += Math.abs(m.qty); t.soldCost += Math.abs(m.costValue); }
+    if(m.type==='restock'){ t.restocks += 1; t.restockUnits += m.qty; t.restockCost += m.costValue; }
+    if(m.type==='adjustment'){ t.adjustments += 1; t.adjUnits += m.qty; t.adjCost += m.costValue; }
     return t;
-  },{qty:0,qtyIn:0,qtyOut:0,costValue:0,profit:0,revenue:0,sales:0,soldUnits:0,restocks:0,adjustments:0});
+  },{qty:0,qtyIn:0,qtyOut:0,costValue:0,profit:0,revenue:0,unitCost:0,sales:0,soldUnits:0,soldCost:0,restocks:0,restockUnits:0,restockCost:0,adjustments:0,adjUnits:0,adjCost:0});
   const moveMargin = moveTotals.revenue ? (moveTotals.profit/moveTotals.revenue*100) : 0;
+  const moveAvgUnitCost = visibleMoves.length ? moveTotals.unitCost / visibleMoves.length : 0;
+  const moveProducts = new Set(visibleMoves.map(m=>m.productId)).size;
+  const moveEdits = products.filter(p=>visibleMoves.some(m=>m.productId===p.id)).reduce((t,p)=>t+Number(p.edits||0),0);
   const filtered = products.filter(p=>{
     const matchCat = cat==='All'||p.category===cat;
     const q = search.toLowerCase();
@@ -1302,15 +1306,18 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
           })}
         </tbody>
         {visibleMoves.length>0 && <tfoot><tr>
-          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{visibleMoves.length} of {moveRows.length} moves</small></td>
-          <td style={{fontSize:'10px',color:'#6b7d76'}}>{moveTotals.sales} sales · {moveTotals.restocks} restocks · {moveTotals.adjustments} adj</td>
+          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{visibleMoves.length} of {moveRows.length} moves · {moveProducts} product{moveProducts===1?'':'s'}</small></td>
+          <td style={{fontSize:'10px',color:'#6b7d76',lineHeight:1.5}}>
+            <span style={{display:'block'}}>{moveTotals.sales} sale{moveTotals.sales===1?'':'s'} · {moveTotals.restocks} restock{moveTotals.restocks===1?'':'s'} · {moveTotals.adjustments} adj</span>
+            <span style={{display:'block'}}>Stock <b style={{color:'#1e40af'}}>+{moveTotals.restockUnits}</b> · Adj <b style={{color:'#92400e'}}>{moveTotals.adjUnits>0?'+':''}{moveTotals.adjUnits}</b> · <b style={{color:'#0f766e'}}>{moveEdits} edit{moveEdits===1?'':'s'}</b></span>
+          </td>
           <td style={{fontSize:'10px',color:'#6b7d76'}}>
             <span style={{fontWeight:700,color:'#1e40af'}}>in +{moveTotals.qtyIn}</span>{' · '}
             <span style={{fontWeight:700,color:'#991b1b'}}>out {moveTotals.qtyOut}</span>
           </td>
           <td><b style={{color:moveTotals.qty>=0?'#065f46':'#991b1b'}}>{moveTotals.qty>0?`+${moveTotals.qty}`:moveTotals.qty} net</b></td>
-          <td style={{fontSize:'10px',color:'#6b7d76'}}>{moveTotals.soldUnits?`${moveTotals.soldUnits} sold`:'—'}</td>
-          <td><b style={{color:moveTotals.costValue>=0?'#065f46':'#991b1b'}}>{moveTotals.costValue>0?`+${format(moveTotals.costValue)}`:`-${format(Math.abs(moveTotals.costValue))}`}</b></td>
+          <td><b>{format(moveTotals.unitCost)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>avg {format(moveAvgUnitCost)}</small></td>
+          <td><b style={{color:moveTotals.costValue>=0?'#065f46':'#991b1b'}}>{moveTotals.costValue>0?`+${format(moveTotals.costValue)}`:`-${format(Math.abs(moveTotals.costValue))}`}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>in {format(moveTotals.restockCost)} · out {format(Math.abs(moveTotals.soldCost+moveTotals.adjCost))}</small></td>
           <td><b style={{color:moveTotals.profit>0?'#065f46':moveTotals.profit<0?'#991b1b':'#6b7d76'}}>{format(moveTotals.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{moveMargin.toFixed(0)}% · on {format(moveTotals.revenue)}</small></td>
           <td style={{color:'#6b7d76',fontSize:'10px'}}>{new Set(visibleMoves.map(m=>m.by)).size} staff</td>
           <td style={{color:'#6b7d76',fontSize:'10px'}}>{visibleMoves.filter(m=>m.note).length} with notes</td>
