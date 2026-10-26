@@ -56,6 +56,35 @@ const hoursBetween = (dateKey, inTime, outTime) => {
   return Math.max(0, Number(((b-a)/60).toFixed(2)));
 };
 const reorderOf = (p) => Number(p?.lowStockAt ?? 5);
+// Expiry tracking: items count as "expiring soon" inside this window.
+const EXPIRY_SOON_DAYS = 90;
+const daysToExpiry = (p) => {
+  if(!p?.expiry) return null;
+  const d = new Date(`${p.expiry}T12:00:00`);
+  if(Number.isNaN(d.getTime())) return null;
+  return Math.round((d - new Date(`${todayKey()}T12:00:00`))/86400000);
+};
+// Sales maths: units bought, cost of goods and profit per sale. Item cost is
+// stored on the sale line when available, otherwise looked up from the product.
+const saleUnits = (sale) => (sale?.items||[]).reduce((s,it)=>s+Number(it.qty||0),0);
+const itemCostOf = (it, products) => {
+  const stored = it?.cost ?? it?.unitCost;
+  if(stored!==undefined && stored!==null && stored!=='') return Number(stored)||0;
+  const prod = (products||[]).find(p=>p.id===it?.productId);
+  return Number(prod?.cost||0);
+};
+const saleCost = (sale, products) => (sale?.items||[]).reduce((s,it)=>s+itemCostOf(it,products)*Number(it.qty||0),0);
+const saleProfit = (sale, products) => (sale?.items||[]).reduce((s,it)=>s+(Number(it.unitPrice||0)-itemCostOf(it,products))*Number(it.qty||0),0);
+
+// 'expired' | 'soon' | 'ok' | 'none' — drives badges, filters and alerts.
+const expiryOf = (p) => {
+  const days = daysToExpiry(p);
+  if(days===null) return {state:'none', days:null, label:'Not set'};
+  if(days<0) return {state:'expired', days, label:`Expired ${Math.abs(days)}d ago`};
+  if(days===0) return {state:'soon', days, label:'Expires today'};
+  if(days<=EXPIRY_SOON_DAYS) return {state:'soon', days, label:`${days}d left`};
+  return {state:'ok', days, label:`${days}d left`};
+};
 
 const categories = ['All','Pain Relief','Cough & Cold','Antibiotics','Antimalarials','Vitamins','Baby & Mother','Personal Care','First Aid','Devices','Other'];
 const expenseCategories = ['Rent','Utilities','Supplies','Transport','Salaries','Maintenance','Marketing','Other'];
@@ -74,18 +103,18 @@ const paymentMethods = [
 ];
 
 const starterProducts = [
-  { id:'p1', name:'Paracetamol 500mg', sku:'PARA-500', category:'Pain Relief', price:12.5, cost:7, stock:48, barcode:'890123', brand:'20 tablets', supplier:'Ernest Chemists' },
-  { id:'p2', name:'Ibuprofen 400mg', sku:'IBU-400', category:'Pain Relief', price:18, cost:11, stock:28, barcode:'890124', brand:'20 tablets', supplier:'Ernest Chemists' },
-  { id:'p3', name:'Amoxicillin 500mg', sku:'AMOX-500', category:'Antibiotics', price:35, cost:22, stock:24, barcode:'890125', brand:'21 capsules', supplier:'M&G Pharma' },
-  { id:'p4', name:'Coartem 20/120', sku:'COART-24', category:'Antimalarials', price:85, cost:62, stock:19, barcode:'890126', brand:'24 tablets', supplier:'Novartis GH' },
-  { id:'p5', name:'Malaria Test Kit', sku:'MAL-TEST', category:'Devices', price:25, cost:16, stock:7, barcode:'890127', brand:'SD Bioline', supplier:'Lab Supplies Ltd' },
-  { id:'p6', name:'ORS Sachet', sku:'ORS-SACH', category:'First Aid', price:6, cost:3.5, stock:33, barcode:'890128', brand:'Cerlyte', supplier:'Uniliver Ghana' },
-  { id:'p7', name:'Vitamin C 1000mg', sku:'VITC-1000', category:'Vitamins', price:45, cost:32, stock:51, barcode:'890129', brand:'60 tablets', supplier:'Vita Health' },
-  { id:'p8', name:'Digital Thermometer', sku:'THERM-D', category:'Devices', price:42, cost:26, stock:22, barcode:'890130', brand:'CarePlus', supplier:'Lab Supplies Ltd' },
-  { id:'p9', name:'Cough Syrup 100ml', sku:'COUGH-100', category:'Cough & Cold', price:22, cost:14, stock:48, barcode:'890131', brand:'Cofex', supplier:'M&G Pharma' },
-  { id:'p10', name:'Baby Diapers Size 3', sku:'DIAP-3', category:'Baby & Mother', price:65, cost:48, stock:3, barcode:'890132', brand:'Pampers Care', supplier:'Uniliver Ghana' },
-  { id:'p11', name:'Antiseptic Cream 30g', sku:'ANTIS-30', category:'Personal Care', price:24, cost:16, stock:60, barcode:'890133', brand:'Savlon', supplier:'Ernest Chemists' },
-  { id:'p12', name:'First Aid Kit Basic', sku:'AID-KIT', category:'First Aid', price:95, cost:70, stock:15, barcode:'890134', brand:'MediKit', supplier:'Lab Supplies Ltd' },
+  { id:'p1', name:'Paracetamol 500mg', sku:'PARA-500', category:'Pain Relief', price:12.5, cost:7, stock:48, barcode:'890123', brand:'20 tablets', supplier:'Ernest Chemists', expiry:'2027-04-30' },
+  { id:'p2', name:'Ibuprofen 400mg', sku:'IBU-400', category:'Pain Relief', price:18, cost:11, stock:28, barcode:'890124', brand:'20 tablets', supplier:'Ernest Chemists', expiry:'2027-02-28' },
+  { id:'p3', name:'Amoxicillin 500mg', sku:'AMOX-500', category:'Antibiotics', price:35, cost:22, stock:24, barcode:'890125', brand:'21 capsules', supplier:'M&G Pharma', expiry:'2026-12-31' },
+  { id:'p4', name:'Coartem 20/120', sku:'COART-24', category:'Antimalarials', price:85, cost:62, stock:19, barcode:'890126', brand:'24 tablets', supplier:'Novartis GH', expiry:'2027-08-31' },
+  { id:'p5', name:'Malaria Test Kit', sku:'MAL-TEST', category:'Devices', price:25, cost:16, stock:7, barcode:'890127', brand:'SD Bioline', supplier:'Lab Supplies Ltd', expiry:'2026-11-30' },
+  { id:'p6', name:'ORS Sachet', sku:'ORS-SACH', category:'First Aid', price:6, cost:3.5, stock:33, barcode:'890128', brand:'Cerlyte', supplier:'Uniliver Ghana', expiry:'2027-06-30' },
+  { id:'p7', name:'Vitamin C 1000mg', sku:'VITC-1000', category:'Vitamins', price:45, cost:32, stock:51, barcode:'890129', brand:'60 tablets', supplier:'Vita Health', expiry:'2027-09-30' },
+  { id:'p8', name:'Digital Thermometer', sku:'THERM-D', category:'Devices', price:42, cost:26, stock:22, barcode:'890130', brand:'CarePlus', supplier:'Lab Supplies Ltd', expiry:'2029-01-31' },
+  { id:'p9', name:'Cough Syrup 100ml', sku:'COUGH-100', category:'Cough & Cold', price:22, cost:14, stock:48, barcode:'890131', brand:'Cofex', supplier:'M&G Pharma', expiry:'2026-12-15' },
+  { id:'p10', name:'Baby Diapers Size 3', sku:'DIAP-3', category:'Baby & Mother', price:65, cost:48, stock:3, barcode:'890132', brand:'Pampers Care', supplier:'Uniliver Ghana', expiry:'2027-03-31' },
+  { id:'p11', name:'Antiseptic Cream 30g', sku:'ANTIS-30', category:'Personal Care', price:24, cost:16, stock:60, barcode:'890133', brand:'Savlon', supplier:'Ernest Chemists', expiry:'2027-05-31' },
+  { id:'p12', name:'First Aid Kit Basic', sku:'AID-KIT', category:'First Aid', price:95, cost:70, stock:15, barcode:'890134', brand:'MediKit', supplier:'Lab Supplies Ltd', expiry:'2028-12-31' },
 ];
 
 const starterCustomers = [
@@ -162,6 +191,11 @@ const starterStockMoves = [
   { id:'sm1', productId:'p1', productName:'Paracetamol 500mg', type:'restock', qty:20, date:daysAgo(2), time:'09:15', by:'Abena Mensah', note:'Ernest Chemists delivery' },
   { id:'sm2', productId:'p5', productName:'Malaria Test Kit', type:'adjustment', qty:-2, date:daysAgo(1), time:'16:40', by:'Ama Boateng', note:'Damaged kits' },
   { id:'sm3', productId:'p11', productName:'Antiseptic Cream 30g', type:'restock', qty:24, date:daysAgo(1), time:'11:05', by:'Abena Mensah', note:'Ernest Chemists delivery' },
+  { id:'sm4', productId:'p1', productName:'Paracetamol 500mg', type:'sale', qty:-1, cost:7, unitPrice:12.5, date:todayKey(), time:'10:42', by:'Ama Boateng', note:'POS-02487' },
+  { id:'sm5', productId:'p7', productName:'Vitamin C 1000mg', type:'sale', qty:-2, cost:32, unitPrice:45, date:todayKey(), time:'10:42', by:'Ama Boateng', note:'POS-02487' },
+  { id:'sm6', productId:'p2', productName:'Ibuprofen 400mg', type:'sale', qty:-2, cost:11, unitPrice:18, date:todayKey(), time:'10:31', by:'Kwame Owusu', note:'POS-02486' },
+  { id:'sm7', productId:'p8', productName:'Digital Thermometer', type:'sale', qty:-1, cost:26, unitPrice:42, date:todayKey(), time:'10:31', by:'Kwame Owusu', note:'POS-02486' },
+  { id:'sm8', productId:'p9', productName:'Cough Syrup 100ml', type:'sale', qty:-1, cost:14, unitPrice:22, date:todayKey(), time:'09:18', by:'Kwame Owusu', note:'POS-02484' },
 ];
 
 const starterAttendance = [
@@ -370,7 +404,7 @@ function App({offline}){
 
   // Stock movements
   const logStockMove = (product, type, qty, note)=> {
-    setStockMoves(sm=>[{id:uid('sm'),productId:product.id,productName:product.name,type,qty,date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:note||''},...sm].slice(0,300));
+    setStockMoves(sm=>[{id:uid('sm'),productId:product.id,productName:product.name,type,qty,cost:Number(product.cost||0),unitPrice:Number(product.price||0),date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:note||''},...sm].slice(0,300));
   };
 
   const applyStockChange = ({product, mode, qty, note, cost})=>{
@@ -429,7 +463,8 @@ function App({offline}){
     if(!isOwner){ flash('Only the owner can manage product records'); return }
     if(editingProduct){
       const prevStock = editingProduct.stock||0;
-      setProducts(p=>p.map(x=>x.id===prod.id?prod:x));
+      const record = {...prod, edits:Number(editingProduct.edits||0)+1, updatedAt:new Date().toISOString()};
+      setProducts(p=>p.map(x=>x.id===record.id?record:x));
       if(prod.stock!==prevStock) logStockMove(prod,'adjustment',prod.stock-prevStock,'Edited in product record');
       addActivity({type:'product',title:`${currentUser?.name} updated product`,detail:prod.name});
       flash(`${prod.name} updated`);
@@ -520,6 +555,7 @@ function App({offline}){
 
   const addToCart = (product)=>{
     if(product.stock<1){ flash(`${product.name} out of stock`); return }
+    if(expiryOf(product).state==='expired'){ flash(`${product.name} has expired — cannot be sold`); return }
     setCart(prev=>{
       const ex = prev.find(i=>i.id===product.id);
       if(ex){
@@ -563,7 +599,7 @@ function App({offline}){
       cashierId: currentUser?.id || cashierId,
       customerId: selectedCustomer.id,
       customerName: selectedCustomer.name,
-      items: cart.map(i=>({productId:i.id,name:i.name,qty:i.qty,unitPrice:i.price,lineTotal:i.price*i.qty})),
+      items: cart.map(i=>({productId:i.id,name:i.name,qty:i.qty,unitPrice:i.price,cost:Number(i.cost||0),lineTotal:i.price*i.qty})),
       subtotal: Number(subtotal.toFixed(2)),
       discount: Number(discount.toFixed(2)),
       tax:0,
@@ -578,7 +614,7 @@ function App({offline}){
       if(!sold) return p;
       return {...p, stock: Math.max(0, p.stock - sold.qty)};
     }));
-    const soldMoves = cart.map(i=>({id:uid('sm'),productId:i.id,productName:i.name,type:'sale',qty:-i.qty,date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:saleId}));
+    const soldMoves = cart.map(i=>({id:uid('sm'),productId:i.id,productName:i.name,type:'sale',qty:-i.qty,cost:Number(i.cost||0),unitPrice:Number(i.price||0),date:todayKey(),time:shortTime(),by:currentUser?.name||'Staff',note:saleId}));
     setStockMoves(sm=>[...soldMoves,...sm].slice(0,300));
     const lowNow = cart.filter(i=>{
       const prod = products.find(p=>p.id===i.id);
@@ -634,7 +670,7 @@ function App({offline}){
     {id:'inventory',label:'Stock & Items',icon:Package},
     {id:'leads',label:'Customer Leads',icon:TrendingUp},
     {id:'customers',label:'Customers',icon:Users},
-    {id:'invoices',label:'Sales & Receipts',icon:FileText},
+    {id:'invoices',label:'Sales History',icon:FileText},
     {id:'expenses',label:'Expenses',icon:Coins},
     {id:'maintenance',label:'Maintenance',icon:Wrench},
     {id:'timeline',label:'Activity Timeline',icon:History},
@@ -714,7 +750,7 @@ function App({offline}){
                   <div className="alert-pop-list">
                     {lowStockItems.length? lowStockItems.map(p=>(
                       <div key={p.id} className="alert-row">
-                        <div style={{flex:1,minWidth:0}}><b style={{fontSize:'11px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.stock} left · reorder at {reorderOf(p)}</small></div>
+                        <div style={{flex:1,minWidth:0}}><b style={{fontSize:'11px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.stock} left · reorder at {reorderOf(p)}{expiryOf(p).state!=='none'?` · exp ${readableDate(p.expiry)}${expiryOf(p).state==='expired'?' (expired)':expiryOf(p).state==='soon'?` (${expiryOf(p).label})`:''}`:''}</small></div>
                         <span className={`status ${p.stock===0?'bad':'warn'}`}><i/>{p.stock===0?'Out':'Low'}</span>
                         {isOwner && <button className="btn small" onClick={()=>{setStockModal({product:p,mode:'restock'});setAlertsOpen(false)}}>Restock</button>}
                       </div>
@@ -742,12 +778,12 @@ function App({offline}){
             onAddProduct={()=>{setEditingProduct(null);setShowProductModal(true)}}
           />}
           {view==='inventory' && <InventoryPage products={products} setProducts={setProducts} search={search} setSearch={setSearch} cat={cat} setCat={setCat} categories={categories} isOwner={isOwner} stockMoves={stockMoves} onEdit={(p)=>{setEditingProduct(p);setShowProductModal(true)}} onDelete={deleteProduct} onAdd={()=>{setEditingProduct(null);setShowProductModal(true)}} onStock={(p,mode)=>setStockModal({product:p,mode})} />}
-          {view==='customers' && <CustomersPage customers={customers} sales={sales} isOwner={isOwner} onEdit={(c)=>{setEditingCustomer(c);setShowCustomerModal(true)}} onAdd={()=>{setEditingCustomer(null);setShowCustomerModal(true)}} onPayAccount={payAccount} />}
+          {view==='customers' && <CustomersPage customers={customers} sales={sales} products={products} isOwner={isOwner} onEdit={(c)=>{setEditingCustomer(c);setShowCustomerModal(true)}} onAdd={()=>{setEditingCustomer(null);setShowCustomerModal(true)}} onPayAccount={payAccount} />}
           {view==='leads' && isOwner && <LeadsPage customers={customers} sales={sales} products={products} onStartSale={(customer)=>{setSelectedCustomerId(customer.id);setView('pos')}} />}
           {view==='maintenance' && isOwner && <MaintenancePage records={maintenance} onSave={saveMaintenance} onComplete={completeMaintenance} onDelete={deleteMaintenance} />}
           {view==='timeline' && isOwner && <TimelinePage activities={activities} sales={sales} stockMoves={stockMoves} expenses={expenses} maintenance={maintenance} messages={messages} />}
           {view==='settings' && isOwner && <SettingsPage settings={settings} onSave={saveSettings} onExportBackup={exportShopData} onChangePassword={()=>setShowMyPassword(true)} offlineStatus={offline.status} counts={{Products:products.length,Sales:sales.length,Customers:customers.filter(c=>!c.isWalkIn).length,Staff:employees.length,Expenses:expenses.length,Maintenance:maintenance.length}} />}
-          {view==='invoices' && <InvoicesPage sales={visibleSales} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} employees={employees} />}
+          {view==='invoices' && <InvoicesPage sales={visibleSales} products={products} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} employees={employees} />}
           {view==='expenses' && isOwner && <ExpensesPage expenses={expenses} onEdit={(e)=>{setEditingExpense(e);setShowExpenseModal(true)}} onAdd={()=>{setEditingExpense(null);setShowExpenseModal(true)}} onDelete={deleteExpense} />}
           {view==='gift' && isOwner && <GiftAccountPage giftCards={giftCards} customers={customers} sales={sales} onAdd={()=>setShowGiftModal(true)} onPayAccount={payAccount} />}
           {view==='staff' && isOwner && <StaffPage employees={employees} sales={sales} attendance={attendance} currentUser={currentUser} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} onViewSales={setStaffSales} onCredentials={setCredentialsFor} />}
@@ -780,7 +816,7 @@ function App({offline}){
       {showMessageModal && <MessageModal employees={employees} currentUser={currentUser} onClose={()=>setShowMessageModal(false)} onSend={sendMessage} />}
       {showExpenseModal && <ExpenseModal expense={editingExpense} onClose={()=>{setShowExpenseModal(false);setEditingExpense(null)}} onSave={saveExpense} employees={employees} />}
       {stockModal && <StockModal stock={stockModal} onClose={()=>setStockModal(null)} onSave={applyStockChange} />}
-      {staffSales && isOwner && <StaffSalesModal employee={staffSales} sales={sales} onClose={()=>setStaffSales(null)} onViewInvoice={(s)=>{setStaffSales(null);setSelectedInvoice(s)}} onViewReceipt={(s)=>{setStaffSales(null);setSelectedReceipt(s)}} />}
+      {staffSales && isOwner && <StaffSalesModal employee={staffSales} sales={sales} products={products} onClose={()=>setStaffSales(null)} onViewInvoice={(s)=>{setStaffSales(null);setSelectedInvoice(s)}} onViewReceipt={(s)=>{setStaffSales(null);setSelectedReceipt(s)}} />}
       {showPay && <PaymentModal cart={cart} subtotal={subtotal} discount={discount} total={total} customer={selectedCustomer} giftCards={giftCards} onClose={()=>setShowPay(false)} onComplete={completeSale} isOwner={isOwner} />}
       {selectedInvoice && <InvoiceModal sale={selectedInvoice} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} />}
       {selectedReceipt && <ReceiptModal sale={selectedReceipt} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedReceipt(null)} />}
@@ -856,6 +892,12 @@ function LoginScreen({onSignIn,shop=SHOP}){
 
 function DashboardOwner({sales,todaySales,products,customers,employees,activities,messages,giftCards,expenses,maintenance,setView,onRestock}){
   const lowStock = products.filter(p=>p.stock<=reorderOf(p)).sort((a,b)=>a.stock-b.stock);
+  const expiring = products
+    .map(p=>({p, ...expiryOf(p)}))
+    .filter(x=>x.state==='expired'||x.state==='soon')
+    .sort((a,b)=>a.days-b.days);
+  const expiredCount = expiring.filter(x=>x.state==='expired').length;
+  const expiringValue = expiring.reduce((s,x)=>s+Number(x.p.cost||0)*Number(x.p.stock||0),0);
   const todayExpenses = expenses.filter(e=>e.date===todayKey());
   const todayExpenseTotal = todayExpenses.reduce((s,e)=>s+Number(e.amount||0),0);
   const totalToday = todaySales.reduce((s,x)=>s+Number(x.total||0),0);
@@ -870,6 +912,9 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
     total: sales.filter(s=>s.payment===pm.id).reduce((s,x)=>s+Number(x.total||0),0),
     count: sales.filter(s=>s.payment===pm.id).length
   }));
+  const allUnitsBought = sales.reduce((sum,x)=>sum+saleUnits(x),0);
+  const allProfit = sales.reduce((sum,x)=>sum+saleProfit(x,products),0);
+  const allProfitMargin = (()=>{ const rev = sales.reduce((sum,x)=>sum+Number(x.total||0),0); return rev? allProfit/rev*100 : 0 })();
   const topProducts = (()=>{ const m=new Map(); sales.forEach(s=>s.items?.forEach(it=>{ const cur=m.get(it.name)||{name:it.name,qty:0,rev:0}; cur.qty+=it.qty; cur.rev+=it.lineTotal; m.set(it.name,cur)})); return [...m.values()].sort((a,b)=>b.qty-a.qty).slice(0,5) })();
 
   const combinedTotal = sales.reduce((s,x)=>s+Number(x.total||0),0);
@@ -884,11 +929,12 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
 
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> OWNER OVERVIEW · {fullDate().toUpperCase()}</div><h1>Your shop, at a glance</h1><p>Sales, customers, stock and equipment in one owner command centre. All cashier activity is combined here.</p></div><div className="dashboard-actions"><button className="btn" onClick={()=>setView('timeline')}><History size={15}/> Timeline</button><button className="btn" onClick={()=>setView('maintenance')}><Wrench size={15}/> Maintenance{maintenanceAttention>0&&<span className="button-count">{maintenanceAttention}</span>}</button><button className="btn primary" onClick={()=>setView('pos')}><ShoppingCart size={16}/> New Sale</button></div></div>
+      <div className="page-head"><div><div className="eyebrow"><span className="kicker-dot"/> OWNER OVERVIEW · {fullDate().toUpperCase()}</div><h1>Your shop, at a glance</h1><p>Sales, customers, stock and equipment in one owner command centre. All cashier activity is combined here.</p></div><div className="dashboard-actions"><button className="btn" onClick={()=>setView('invoices')}><FileText size={15}/> Sales history</button><button className="btn" onClick={()=>setView('timeline')}><History size={15}/> Timeline</button><button className="btn" onClick={()=>setView('maintenance')}><Wrench size={15}/> Maintenance{maintenanceAttention>0&&<span className="button-count">{maintenanceAttention}</span>}</button><button className="btn primary" onClick={()=>setView('pos')}><ShoppingCart size={16}/> New Sale</button></div></div>
 
       <div className="grid metrics" style={{marginBottom:'14px'}}>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><Wallet size={16}/></div><span style={{fontSize:'10px',fontWeight:800,color:'#065f46',background:'#ecfdf5',padding:'3px 7px',borderRadius:'20px'}}>TODAY</span></div><div className="metric-label">Sales today (combined)</div><div className="metric-value">{format(totalToday)}</div><div className="metric-note">{dailyChange!==null&&<em>{dailyChange>=0?<TrendingUp size={12}/>:<TrendingDown size={12}/>} {dailyChange>=0?'+':''}{dailyChange.toFixed(0)}%</em>} {todaySales.length} transactions from all cashiers</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><DollarSign size={16}/></div></div><div className="metric-label">Total combined revenue</div><div className="metric-value">{format(combinedTotal)}</div><div className="metric-note">All payment methods combined to owner</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><PiggyBank size={16}/></div></div><div className="metric-label">Profit on all sales</div><div className="metric-value" style={{color:allProfit>=0?'#065f46':'#991b1b'}}>{format(allProfit)}</div><div className="metric-note"><b>{allUnitsBought.toLocaleString()}</b> products bought · {allProfitMargin.toFixed(0)}% margin</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><PiggyBank size={16}/></div></div><div className="metric-label">Money owed by customers</div><div className="metric-value">{format(accountReceivable)}</div><div className="metric-note">{customers.filter(c=>c.balance>0).length} customers owe</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon violet"><Gift size={16}/></div></div><div className="metric-label">Gift card liability</div><div className="metric-value">{format(giftLiability)}</div><div className="metric-note">{giftCards.filter(g=>g.status==='active').length} active cards</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon blue"><Package size={16}/></div></div><div className="metric-label">Low stock alerts</div><div className="metric-value">{lowStock.length}</div><div className="metric-note">{lowStock.length? <button className="link-btn" onClick={()=>setView('inventory')}>Needs restock — view items</button> : 'All stocked'}</div></div>
@@ -918,7 +964,13 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
               const empTotal = empSales.reduce((s,x)=>s+Number(x.total||0),0);
               return <tr key={emp.id}><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className="avatar cashier" style={{width:'28px',height:'28px'}}>{emp.initials}</div><span><b style={{fontSize:'12px'}}>{emp.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{emp.role} · {emp.shift}</small></span></div></td><td>{empSales.length}</td><td><b>{format(empTotal)}</b></td><td><span className="status ok"><i/> {emp.status}</span></td></tr>
             })}
-          </tbody></table></div>
+          </tbody>
+          <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{employees.filter(e=>e.role!=='owner').length} cashiers</small></td>
+            <td><b>{employees.filter(e=>e.role!=='owner').reduce((s,emp)=>s+sales.filter(x=>x.cashierId===emp.id||x.cashier===emp.name).length,0)}</b></td>
+            <td><b>{format(employees.filter(e=>e.role!=='owner').reduce((s,emp)=>s+sales.filter(x=>x.cashierId===emp.id||x.cashier===emp.name).reduce((a,x)=>a+Number(x.total||0),0),0))}</b></td>
+            <td><span style={{fontSize:'10px',color:'#6b7d76'}}>{sales.length} invoices shop-wide</span></td>
+          </tr></tfoot></table></div>
           <div style={{marginTop:'10px',fontSize:'11px',color:'#6b7d76',display:'flex',justifyContent:'space-between'}}><span>Combined to owner: {format(combinedTotal)}</span><span>{sales.length} total invoices</span></div>
         </div>
 
@@ -928,7 +980,7 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
             <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
               {lowStock.slice(0,6).map(p=>(
                 <div key={p.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',border:'1px solid #fde68a',background:'#fffbeb',borderRadius:'8px'}}>
-                  <div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#92400e'}}>{p.stock} left · reorder at {reorderOf(p)}</small></div>
+                  <div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#92400e'}}>{p.stock} left · reorder at {reorderOf(p)}{p.expiry?` · exp ${readableDate(p.expiry)}`:''}</small></div>
                   <span className={`status ${p.stock===0?'bad':'warn'}`}><i/>{p.stock===0?'Out':'Low'}</span>
                   <button className="btn small" onClick={()=>onRestock(p)}>Restock</button>
                 </div>
@@ -936,6 +988,26 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
               {lowStock.length>6 && <button className="btn small ghost" onClick={()=>setView('inventory')}>View all {lowStock.length} alerts</button>}
             </div>
           ) : <div className="empty-state"><b>Everything is stocked</b><small>Alerts appear when items reach their reorder level</small></div>}
+        </div>
+
+        <div className="card">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><h2>Expiry alerts</h2><p className="sub">Expired items and items expiring within {EXPIRY_SOON_DAYS} days</p></div><AlarmClock size={16} color={expiring.length?'#b45309':'#6b7d76'}/></div>
+          {expiring.length? <>
+            <div style={{display:'flex',gap:'6px',marginTop:'10px',flexWrap:'wrap'}}>
+              {expiredCount>0 && <span className="kpi" style={{color:'#991b1b',background:'#fef2f2'}}><b>{expiredCount}</b> expired</span>}
+              <span className="kpi" style={{color:'#92400e',background:'#fffbeb'}}><b>{expiring.length-expiredCount}</b> expiring soon</span>
+              <span className="kpi">At cost <b>{format(expiringValue)}</b></span>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:'8px',marginTop:'10px'}}>
+              {expiring.slice(0,5).map(({p,state,label})=>(
+                <div key={p.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',border:`1px solid ${state==='expired'?'#fecaca':'#fde68a'}`,background:state==='expired'?'#fef2f2':'#fffbeb',borderRadius:'8px'}}>
+                  <div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:state==='expired'?'#991b1b':'#92400e'}}>{readableDate(p.expiry)} · {label} · {p.stock} in stock</small></div>
+                  <span className={`status ${state==='expired'?'bad':'warn'}`}><i/>{state==='expired'?'Expired':'Soon'}</span>
+                </div>
+              ))}
+            </div>
+            <button className="btn small ghost" style={{marginTop:'10px'}} onClick={()=>setView('inventory')}>Review expiry <ArrowRight size={13}/></button>
+          </> : <div className="empty-state"><b>No expiry concerns</b><small>Nothing has expired or expires in the next {EXPIRY_SOON_DAYS} days</small></div>}
         </div>
 
         <div className="card">
@@ -1006,7 +1078,9 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
           <div className="products">
             {products.map(p=>(
               <button key={p.id} className="prod" onClick={()=>{addToCart(p); focusSearch()}} disabled={p.stock<1}>
-                <div className="prod-top"><span className={`stock ${isOwner&&p.stock<=reorderOf(p)?'low':''}`}>{p.stock<1?'Out of stock':(isOwner&&p.stock<=reorderOf(p)?`${p.stock} left`:'In stock')}</span></div>
+                <div className="prod-top"><span className={`stock ${isOwner&&p.stock<=reorderOf(p)?'low':''}`}>{p.stock<1?'Out of stock':(isOwner&&p.stock<=reorderOf(p)?`${p.stock} left`:'In stock')}</span>
+                  {(()=>{ const e=expiryOf(p); return e.state==='expired'? <span className="status bad" style={{fontSize:'9px'}}><i/>Expired</span> : e.state==='soon'? <span className="status warn" style={{fontSize:'9px'}}><i/>Exp {e.days}d</span> : null })()}
+                </div>
                 <b>{p.name}</b><small>{p.brand} · {p.category}</small>
                 <div className="prod-foot"><strong>{format(p.price)}</strong><span className="add">Add</span></div>
               </button>
@@ -1065,16 +1139,83 @@ function POSPage({products,allProducts,categories,cat,setCat,search,setSearch,ca
 
 function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,stockMoves,onEdit,onDelete,onAdd,onStock}){
   const [stockFilter,setStockFilter]=useState('All');
+  const [expiryFilter,setExpiryFilter]=useState('All');
+  const [allMoves,setAllMoves]=useState(false);
+  // Value every movement at the item's cost price and, for sales, its profit.
+  const moveRows = stockMoves.map(m=>{
+    const prod = products.find(p=>p.id===m.productId);
+    const unitCost = Number(m.cost ?? prod?.cost ?? 0);
+    const unitPrice = Number(m.unitPrice ?? prod?.price ?? 0);
+    const qty = Number(m.qty||0);
+    const costValue = unitCost * qty;
+    const profit = m.type==='sale' ? (unitPrice-unitCost)*Math.abs(qty) : 0;
+    return {...m, unitCost, unitPrice, qty, costValue, profit};
+  });
+  const sortedMoves = [...moveRows].sort((a,b)=> (b.date+(b.time||'')).localeCompare(a.date+(a.time||'')));
+  const visibleMoves = allMoves ? sortedMoves : sortedMoves.slice(0,15);
+  const moveTotals = visibleMoves.reduce((t,m)=>{
+    t.qty += m.qty;
+    if(m.qty>0) t.qtyIn += m.qty; else t.qtyOut += m.qty;
+    t.costValue += m.costValue;
+    t.profit += m.profit;
+    t.unitCost += m.unitCost;
+    t.revenue += m.type==='sale' ? m.unitPrice*Math.abs(m.qty) : 0;
+    if(m.type==='sale'){ t.sales += 1; t.soldUnits += Math.abs(m.qty); t.soldCost += Math.abs(m.costValue); }
+    if(m.type==='restock'){ t.restocks += 1; t.restockUnits += m.qty; t.restockCost += m.costValue; }
+    if(m.type==='adjustment'){ t.adjustments += 1; t.adjUnits += m.qty; t.adjCost += m.costValue; }
+    return t;
+  },{qty:0,qtyIn:0,qtyOut:0,costValue:0,profit:0,revenue:0,unitCost:0,sales:0,soldUnits:0,soldCost:0,restocks:0,restockUnits:0,restockCost:0,adjustments:0,adjUnits:0,adjCost:0});
+  const moveMargin = moveTotals.revenue ? (moveTotals.profit/moveTotals.revenue*100) : 0;
+  const moveAvgUnitCost = visibleMoves.length ? moveTotals.unitCost / visibleMoves.length : 0;
+  const moveProducts = new Set(visibleMoves.map(m=>m.productId)).size;
+  const moveEdits = products.filter(p=>visibleMoves.some(m=>m.productId===p.id)).reduce((t,p)=>t+Number(p.edits||0),0);
   const filtered = products.filter(p=>{
     const matchCat = cat==='All'||p.category===cat;
     const q = search.toLowerCase();
     const matchesText = matchCat && `${p.name} ${p.brand} ${p.sku} ${p.category} ${p.supplier||''}`.toLowerCase().includes(q);
     const matchesStock = stockFilter==='All' || (stockFilter==='Low' && p.stock<=reorderOf(p)) || (stockFilter==='Out' && p.stock===0);
-    return matchesText && matchesStock;
+    const exp = expiryOf(p).state;
+    const matchesExpiry = expiryFilter==='All' || (expiryFilter==='Expired' && exp==='expired') || (expiryFilter==='Soon' && exp==='soon') || (expiryFilter==='None' && exp==='none');
+    return matchesText && matchesStock && matchesExpiry;
   });
   const low = products.filter(p=>p.stock<=reorderOf(p)).length;
   const out = products.filter(p=>p.stock===0).length;
   const stockValue = products.reduce((s,p)=>s+Number(p.cost||0)*Number(p.stock||0),0);
+  const expired = products.filter(p=>expiryOf(p).state==='expired').length;
+  const expiringSoon = products.filter(p=>expiryOf(p).state==='soon').length;
+  const noExpiry = products.filter(p=>expiryOf(p).state==='none').length;
+  const expiredValue = products.filter(p=>expiryOf(p).state==='expired').reduce((s,p)=>s+Number(p.cost||0)*Number(p.stock||0),0);
+  const totals = filtered.reduce((t,p)=>{
+    const cost = Number(p.cost||0), price = Number(p.price||0), qty = Number(p.stock||0);
+    t.stock += qty;
+    t.reorder += reorderOf(p);
+    t.cost += cost;
+    t.price += price;
+    t.profit += price - cost;
+    t.costValue += cost * qty;
+    t.priceValue += price * qty;
+    if(qty===0) t.out += 1;
+    else if(qty<=reorderOf(p)) t.low += 1;
+    else t.inStock += 1;
+    const exp = expiryOf(p);
+    if(exp.state==='expired'){ t.expired += 1; t.expiredValue += cost*qty; }
+    else if(exp.state==='soon') t.soon += 1;
+    else if(exp.state==='none') t.noExpiry += 1;
+    else t.expiryOk += 1;
+    return t;
+  },{stock:0,reorder:0,cost:0,price:0,profit:0,costValue:0,priceValue:0,low:0,out:0,inStock:0,expired:0,soon:0,expiryOk:0,noExpiry:0,expiredValue:0});
+  const totalMargin = totals.price ? (totals.profit/totals.price*100) : 0;
+  const totalCats = new Set(filtered.map(p=>p.category)).size;
+  // Action totals: what the Stock / ± Adj / Edit buttons have done for these items.
+  const filteredIds = new Set(filtered.map(p=>p.id));
+  const actionTotals = stockMoves.filter(m=>filteredIds.has(m.productId)).reduce((t,m)=>{
+    const qty = Number(m.qty||0);
+    if(m.type==='restock'){ t.stockUnits += qty; t.stockClicks += 1 }
+    else if(m.type==='adjustment'){ t.adjUnits += qty; t.adjClicks += 1 }
+    else if(m.type==='sale'){ t.salesUnits += Math.abs(qty); t.sales += 1 }
+    return t;
+  },{stockUnits:0,stockClicks:0,adjUnits:0,adjClicks:0,salesUnits:0,sales:0});
+  const editTotal = filtered.reduce((t,p)=>t+Number(p.edits||0),0);
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><Package size={12}/> {isOwner?'STOCK & ITEM LIST':'ITEM LIST'}</div><h1>{isOwner?'Stock management & item records':'Item list'}</h1>{!isOwner && <p>Browse products, prices and availability. Cost, profit and reorder tracking are managed by the owner.</p>}</div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
@@ -1082,7 +1223,10 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
         <span className="kpi"><Package size={14}/> <b>{products.length}</b> total items</span>
         {isOwner && <span className="kpi" style={{color:low?'#92400e':'#065f46',background:low?'#fef3c7':'#ecfdf5'}}><AlertTriangle size={14}/> <b>{low}</b> low stock</span>}
         {isOwner && <span className="kpi" style={{color:out?'#991b1b':'#065f46',background:out?'#fef2f2':'#ecfdf5'}}><TrendingDown size={14}/> <b>{out}</b> out of stock</span>}
+        <span className="kpi" style={{color:expired?'#991b1b':'#065f46',background:expired?'#fef2f2':'#ecfdf5'}}><AlarmClock size={14}/> <b>{expired}</b> expired</span>
+        <span className="kpi" style={{color:expiringSoon?'#92400e':'#065f46',background:expiringSoon?'#fffbeb':'#ecfdf5'}}><CalendarDays size={14}/> <b>{expiringSoon}</b> expiring ≤{EXPIRY_SOON_DAYS}d</span>
         {isOwner && <span className="kpi"><Wallet size={14}/> Stock value <b>{format(stockValue)}</b></span>}
+        {isOwner && expiredValue>0 && <span className="kpi" style={{color:'#991b1b',background:'#fef2f2'}}><AlarmClock size={14}/> Expired stock <b>{format(expiredValue)}</b></span>}
         {isOwner && <span className="kpi"><History size={14}/> <b>{stockMoves.length}</b> stock moves</span>}
       </div>
       <div className="card">
@@ -1090,8 +1234,12 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
           <div className="search" style={{maxWidth:'380px'}}><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={selectOnEnter} placeholder={isOwner?'Search items, SKU, brand, supplier…':'Search items, SKU, brand…'}/></div>
           <select value={cat} onChange={e=>setCat(e.target.value)} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option>{categories.filter(c=>c!=='All').map(c=><option key={c}>{c}</option>)}</select>
           {isOwner && <div className="chips">{['All','Low','Out'].map(f=><button key={f} className={`chip-btn ${stockFilter===f?'active':''}`} onClick={()=>setStockFilter(f)}>{f==='All'?'All stock':f==='Low'?'Low stock':'Out of stock'}</button>)}</div>}
+          <div className="chips">
+            {[['All','All expiry'],['Expired',`Expired (${expired})`],['Soon',`Expiring soon (${expiringSoon})`],['None',`No expiry (${noExpiry})`]].map(([v,label])=>
+              <button key={v} className={`chip-btn ${expiryFilter===v?'active':''}`} onClick={()=>setExpiryFilter(v)} style={v!=='All'&&expiryFilter===v?(v==='Expired'?{background:'#fef2f2',color:'#991b1b',borderColor:'#fecaca'}:{}):undefined}>{label}</button>)}
+          </div>
         </div>
-        <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th>{isOwner&&<th>REORDER AT</th>}{isOwner&&<th>COST</th>}<th>PRICE</th>{isOwner&&<th>PROFIT</th>}<th>STATUS</th>{isOwner&&<th></th>}</tr></thead><tbody>
+        <div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th>{isOwner&&<th>REORDER AT</th>}{isOwner&&<th>COST</th>}<th>PRICE</th>{isOwner&&<th>PROFIT</th>}<th>EXPIRY</th><th>STATUS</th>{isOwner&&<th></th>}</tr></thead><tbody>
           {filtered.map(p=>{
             const profit = p.price - (p.cost||0);
             const margin = p.price? (profit/p.price*100):0;
@@ -1103,41 +1251,85 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
               {isOwner&&<td>{format(p.cost||0)}</td>}
               <td><b>{format(p.price)}</b></td>
               {isOwner&&<td><span style={{color:profit>0?'#065f46':'#991b1b'}}>{format(profit)} ({margin.toFixed(0)}%)</span></td>}
+              <td>{(()=>{ const e=expiryOf(p); return <span className={`status ${e.state==='expired'?'bad':e.state==='soon'?'warn':e.state==='none'?'neutral':'ok'}`} title={p.expiry?`Expires ${readableDate(p.expiry)}`:''}><i/>{e.state==='none'?'Not set':(p.expiry?`${readableDate(p.expiry)} · ${e.label}`:e.label)}</span> })()}</td>
               <td><span className={`status ${p.stock===0?'bad':(isOwner&&p.stock<=reorderOf(p))?'warn':'ok'}`}><i/>{p.stock===0?'Out':(isOwner&&p.stock<=reorderOf(p))?'Low':'In stock'}</span></td>
               {isOwner&&<td><div style={{display:'flex',gap:'4px'}}>
                 <button className="btn small" title="Restock in" onClick={()=>onStock(p,'restock')}><Plus size={12}/> Stock</button>
                 <button className="btn small" title="Adjust (damage/loss/count)" onClick={()=>onStock(p,'adjust')}>± Adj</button>
-                <button className="btn small" onClick={()=>onEdit(p)}><Edit2 size={12}/> Edit</button>
+                <button className="btn small" onClick={()=>onEdit(p)} title={p.edits?`Edited ${p.edits} time${p.edits===1?'':'s'}${p.updatedAt?` · last ${readableDate(String(p.updatedAt).slice(0,10))}`:''}`:'Not edited yet'}><Edit2 size={12}/> Edit{p.edits?<small style={{fontSize:'9px',fontWeight:800,color:'#0f766e'}}>{p.edits}</small>:null}</button>
                 <button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm(`Delete ${p.name}?`)) onDelete(p.id)}}><Trash2 size={12}/></button>
               </div></td>}
             </tr>
           })}
-        </tbody></table></div>
+        </tbody>
+        {filtered.length>0 && <tfoot>
+          <tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{filtered.length} item{filtered.length===1?'':'s'}{filtered.length!==products.length?` of ${products.length}`:''}</small></td>
+            <td style={{color:'#6b7d76'}}>—</td>
+            <td><b>{totalCats}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>categor{totalCats===1?'y':'ies'}</small></td>
+            <td><b>{totals.stock.toLocaleString()}</b> units</td>
+            {isOwner&&<td><b>{totals.reorder.toLocaleString()}</b> units</td>}
+            {isOwner&&<td><b>{format(totals.cost)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>stock value {format(totals.costValue)}</small></td>}
+            <td><b>{format(totals.price)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>retail value {format(totals.priceValue)}</small></td>
+            {isOwner&&<td><b style={{color:totals.profit>0?'#065f46':'#991b1b'}}>{format(totals.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{totalMargin.toFixed(0)}% · on hand {format(totals.priceValue-totals.costValue)}</small></td>}
+            <td><span style={{fontSize:'10px',fontWeight:700,color:'#991b1b'}}>{totals.expired} expired</span> <span style={{fontSize:'10px',fontWeight:700,color:'#92400e'}}>· {totals.soon} soon</span>{isOwner && totals.expiredValue>0 && <small style={{display:'block',fontSize:'10px',color:'#991b1b'}}>{format(totals.expiredValue)} at cost</small>}</td>
+            <td><span style={{fontSize:'10px',fontWeight:700,color:'#065f46'}}>{totals.inStock} in</span> <span style={{fontSize:'10px',fontWeight:700,color:'#92400e'}}>· {totals.low} low</span> <span style={{fontSize:'10px',fontWeight:700,color:'#991b1b'}}>· {totals.out} out</span></td>
+            {isOwner&&<td style={{fontSize:'9px',lineHeight:1.5,whiteSpace:'nowrap'}}>
+              <span style={{display:'block',fontWeight:800,color:'#1e40af'}}>Stock <span style={{color:'#065f46'}}>+{actionTotals.stockUnits}</span> <small style={{color:'#6b7d76',fontWeight:600}}>({actionTotals.stockClicks})</small></span>
+              <span style={{display:'block',fontWeight:800,color:'#92400e'}}>Adj <span style={{color:actionTotals.adjUnits<0?'#991b1b':'#065f46'}}>{actionTotals.adjUnits>0?'+':''}{actionTotals.adjUnits}</span> <small style={{color:'#6b7d76',fontWeight:600}}>({actionTotals.adjClicks})</small></span>
+              <span style={{display:'block',fontWeight:800,color:editTotal?'#0f766e':'#6b7d76'}}>{editTotal} edit{editTotal===1?'':'s'}</span>
+            </td>}
+          </tr>
+        </tfoot>}
+        </table></div>
         {filtered.length===0 && <div className="empty-state"><b>No items</b><small>Try different filter</small></div>}
         <div style={{display:'flex',justifyContent:'space-between',padding:'10px 2px 2px',fontSize:'11px',color:'#6b7d76'}}><span>Showing {filtered.length} of {products.length}</span><span>{isOwner?'Owner controls inventory':'Owner controls product records'}</span></div>
       </div>
 
       {isOwner && <div className="card" style={{marginTop:'14px'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}><div><h2>Stock movement log</h2><p className="sub">Every unit in and out — sales, restocks and adjustments</p></div><History size={16} color="#6b7d76"/></div>
-        <div className="table-wrap"><table><thead><tr><th>DATE</th><th>PRODUCT</th><th>TYPE</th><th>QTY</th><th>BY</th><th>NOTE</th></tr></thead><tbody>
-          {stockMoves.slice(0,15).map(m=>{
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',gap:'8px',flexWrap:'wrap'}}><div><h2>Stock movement log</h2><p className="sub">Every unit in and out — sales, restocks and adjustments, valued at cost price</p></div><div style={{display:'flex',gap:'6px',alignItems:'center'}}>{moveRows.length>15 && <button className="btn small ghost" onClick={()=>setAllMoves(v=>!v)}>{allMoves?`Show latest 15`:`View all ${moveRows.length}`}</button>}<History size={16} color="#6b7d76"/></div></div>
+        <div className="table-wrap"><table><thead><tr><th>DATE</th><th>PRODUCT</th><th>TYPE</th><th>QTY</th><th>UNIT COST</th><th>VALUE AT COST</th><th>PROFIT</th><th>BY</th><th>NOTE</th></tr></thead><tbody>
+          {visibleMoves.map(m=>{
             const t = stockMoveTypes[m.type]||stockMoveTypes.adjustment;
             return <tr key={m.id}>
               <td><b style={{fontSize:'12px'}}>{m.date===todayKey()?'Today':readableDate(m.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{m.time}</small></td>
-              <td>{m.productName}</td>
+              <td><b style={{fontSize:'12px'}}>{m.productName}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>sells at {format(m.unitPrice)}</small></td>
               <td><span className={`status ${m.type==='restock'?'info':m.type==='sale'?'ok':'warn'}`}><i/>{t.label}</span></td>
               <td><b style={{color:m.qty>0?'#065f46':'#991b1b'}}>{m.qty>0?`+${m.qty}`:m.qty}</b></td>
-              <td>{m.by}</td><td style={{color:'#6b7d76'}}>{m.note||'—'}</td>
+              <td>{format(m.unitCost)}</td>
+              <td><b style={{color:m.costValue>=0?'#065f46':'#991b1b'}}>{m.costValue>0?`+${format(m.costValue)}`:m.costValue<0?`-${format(Math.abs(m.costValue))}`:format(0)}</b></td>
+              <td>{m.type==='sale'
+                ? <b style={{color:m.profit>0?'#065f46':m.profit<0?'#991b1b':'#6b7d76'}}>{format(m.profit)}</b>
+                : <span style={{color:'#94a8a1',fontSize:'11px'}}>—</span>}</td>
+              <td>{m.by}</td><td style={{color:'#6b7d76',maxWidth:'220px',overflow:'hidden',textOverflow:'ellipsis'}}>{m.note||'—'}</td>
             </tr>
           })}
-        </tbody></table></div>
+        </tbody>
+        {visibleMoves.length>0 && <tfoot><tr>
+          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{visibleMoves.length} of {moveRows.length} moves · {moveProducts} product{moveProducts===1?'':'s'}</small></td>
+          <td style={{fontSize:'10px',color:'#6b7d76',lineHeight:1.5}}>
+            <span style={{display:'block'}}>{moveTotals.sales} sale{moveTotals.sales===1?'':'s'} · {moveTotals.restocks} restock{moveTotals.restocks===1?'':'s'} · {moveTotals.adjustments} adj</span>
+            <span style={{display:'block'}}>Stock <b style={{color:'#1e40af'}}>+{moveTotals.restockUnits}</b> · Adj <b style={{color:'#92400e'}}>{moveTotals.adjUnits>0?'+':''}{moveTotals.adjUnits}</b> · <b style={{color:'#0f766e'}}>{moveEdits} edit{moveEdits===1?'':'s'}</b></span>
+          </td>
+          <td style={{fontSize:'10px',color:'#6b7d76'}}>
+            <span style={{fontWeight:700,color:'#1e40af'}}>in +{moveTotals.qtyIn}</span>{' · '}
+            <span style={{fontWeight:700,color:'#991b1b'}}>out {moveTotals.qtyOut}</span>
+          </td>
+          <td><b style={{color:moveTotals.qty>=0?'#065f46':'#991b1b'}}>{moveTotals.qty>0?`+${moveTotals.qty}`:moveTotals.qty} net</b></td>
+          <td><b>{format(moveTotals.unitCost)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>avg {format(moveAvgUnitCost)}</small></td>
+          <td><b style={{color:moveTotals.costValue>=0?'#065f46':'#991b1b'}}>{moveTotals.costValue>0?`+${format(moveTotals.costValue)}`:`-${format(Math.abs(moveTotals.costValue))}`}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>in {format(moveTotals.restockCost)} · out {format(Math.abs(moveTotals.soldCost+moveTotals.adjCost))}</small></td>
+          <td><b style={{color:moveTotals.profit>0?'#065f46':moveTotals.profit<0?'#991b1b':'#6b7d76'}}>{format(moveTotals.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{moveMargin.toFixed(0)}% · on {format(moveTotals.revenue)}</small></td>
+          <td style={{color:'#6b7d76',fontSize:'10px'}}>{new Set(visibleMoves.map(m=>m.by)).size} staff</td>
+          <td style={{color:'#6b7d76',fontSize:'10px'}}>{visibleMoves.filter(m=>m.note).length} with notes</td>
+        </tr></tfoot>}
+        </table></div>
         {stockMoves.length===0 && <div className="empty-state"><History size={20}/><b>No stock moves yet</b><small>Restocks, sales and adjustments will appear here</small></div>}
       </div>}
     </div>
   );
 }
 
-function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
+function CustomersPage({customers,sales,products=[],isOwner,onEdit,onAdd,onPayAccount}){
   const [q,setQ]=useState('');
   const [payModal,setPayModal]=useState(null);
   const [payAmount,setPayAmount]=useState('');
@@ -1146,6 +1338,15 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
     return `${c.name} ${c.phone} ${c.email}`.toLowerCase().includes(q.toLowerCase());
   });
   const totalReceivable = filtered.reduce((s,c)=>s+Number(c.balance||0),0);
+  const totals = filtered.reduce((t,c)=>{
+    t.balance += Number(c.balance||0);
+    t.spent += Number(c.totalSpent||0);
+    t.visits += Number(c.visits||0);
+    if(Number(c.balance||0)>0) t.owing += 1;
+    t.units += sales.filter(s=>s.customerId===c.id).reduce((a,s)=>a+saleUnits(s),0);
+    t.profit += sales.filter(s=>s.customerId===c.id).reduce((a,s)=>a+saleProfit(s,products),0);
+    return t;
+  },{balance:0,spent:0,visits:0,owing:0,units:0,profit:0});
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><Users size={12}/> CUSTOMER LIST</div><h1>Customer list</h1></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add customer</button></div>
@@ -1157,7 +1358,16 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
             const custSales = sales.filter(s=>s.customerId===c.id);
             return <tr key={c.id}><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className="avatar cashier" style={{width:'28px',height:'28px',fontSize:'10px'}}>{initials(c.name)}</div><span><b style={{fontSize:'12px'}}>{c.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{c.email||c.address}</small></span></div></td><td>{c.phone||'—'}</td><td><b style={{color:c.balance>0?'#991b1b':'#065f46'}}>{format(c.balance)}</b></td><td>{format(c.totalSpent)}</td><td>{c.visits||custSales.length}</td><td><span className={`status ${c.balance>0?'warn':'ok'}`}><i/>{c.balance>0?'Owes':'Clear'}</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onEdit(c)}><Edit2 size={12}/> Edit</button>{c.balance>0 && isOwner && <button className="btn small primary" onClick={()=>{setPayModal(c);setPayAmount(String(c.balance))}}><DollarSign size={12}/> Pay</button>}</div></td></tr>
           })}
-        </tbody></table></div>
+        </tbody>
+        {filtered.length>0 && <tfoot><tr>
+          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{filtered.length} customer{filtered.length===1?'':'s'} · {totals.owing} owing · {totals.units.toLocaleString()} products bought</small></td>
+          <td style={{color:'#6b7d76'}}>—</td>
+          <td><b style={{color:totals.balance>0?'#991b1b':'#065f46'}}>{format(totals.balance)}</b></td>
+          <td><b>{format(totals.spent)}</b></td>
+          <td><b>{totals.visits.toLocaleString()}</b></td>
+          <td></td><td></td>
+        </tr></tfoot>}
+        </table></div>
       </div>
 
       {payModal && (
@@ -1175,23 +1385,142 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
   );
 }
 
-function InvoicesPage({sales,isOwner,filter,setFilter,onViewInvoice,onViewReceipt,employees}){
+// Month calendar for sales history: per-day revenue, click a day or drag a range.
+function SalesCalendar({sales,products=[],from,to,onSelect,onClear,isOwner}){
+  const [cursor,setCursor]=useState(()=> (from||to||todayKey()).slice(0,7));
+  useEffect(()=>{ if(from) setCursor(from.slice(0,7)) },[from]);
+  const daily = useMemo(()=>{
+    const map=new Map();
+    sales.forEach(s=>{
+      const cur = map.get(s.date) || {total:0,count:0,units:0,profit:0};
+      cur.total += Number(s.total||0);
+      cur.count += 1;
+      cur.units += saleUnits(s);
+      cur.profit += saleProfit(s,products);
+      map.set(s.date,{...cur});
+    });
+    return map;
+  },[sales,products]);
+  const [year,month] = cursor.split('-').map(Number);
+  const monthLabel = new Date(year,month-1,1).toLocaleDateString('en-GH',{month:'long',year:'numeric'});
+  const firstDow = (new Date(year,month-1,1).getDay()+6)%7; // Monday first
+  const daysInMonth = new Date(year,month,0).getDate();
+  const dayKey = (d)=>`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const monthKeys = Array.from({length:daysInMonth},(_,i)=>dayKey(i+1));
+  const monthStats = monthKeys.reduce((t,k)=>{ const d=daily.get(k); if(d){ t.total+=d.total; t.count+=d.count; t.units+=d.units; t.profit+=d.profit } return t },{total:0,count:0,units:0,profit:0});
+  const shiftMonth = (n)=>{ const d=new Date(year,month-1+n,1); setCursor(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`) };
+  const selStart = from || '';
+  const selEnd = to || from || '';
+  const isSelected = (k)=> selStart && k>=selStart && k<=selEnd;
+  // First click starts a range, a second click completes it; clicking a new day
+  // while a complete range is shown starts over.
+  const pick = (k)=>{
+    if(!from || (from && to)) onSelect(k,'');
+    else onSelect(from<=k?from:k, from<=k?k:from);
+  };
+  const today = todayKey();
+  const totalSales = sales.length;
+  return (
+    <div style={{marginTop:'12px'}}>
+      <div className="cal-head">
+        <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+          <button className="btn icon small" onClick={()=>shiftMonth(-1)} title="Previous month"><ChevronDown size={14} style={{transform:'rotate(90deg)'}}/></button>
+          <b style={{fontSize:'13px',minWidth:'140px',textAlign:'center'}}>{monthLabel}</b>
+          <button className="btn icon small" onClick={()=>shiftMonth(1)} title="Next month"><ChevronDown size={14} style={{transform:'rotate(-90deg)'}}/></button>
+          <button className="btn small ghost" onClick={()=>setCursor(today.slice(0,7))}>This month</button>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',fontSize:'11px',color:'#6b7d76'}}>
+          <span><b style={{color:'#0f766e'}}>{format(monthStats.total)}</b> · {monthStats.count} sale{monthStats.count===1?'':'s'} · {monthStats.units} units{isOwner?` · profit ${format(monthStats.profit)}`:''}</span>
+          {(from||to) && <button className="btn small ghost" onClick={onClear}><X size={12}/> Clear date filter</button>}
+        </div>
+      </div>
+      <div className="cal-grid">
+        {['MON','TUE','WED','THU','FRI','SAT','SUN'].map(d=><div key={d} className="cal-dow">{d}</div>)}
+        {Array.from({length:firstDow}).map((_,i)=><div key={'pad'+i} className="cal-day muted"/>)}
+        {monthKeys.map(k=>{
+          const d = daily.get(k);
+          const day = Number(k.slice(-2));
+          return <button key={k}
+            className={`cal-day ${d?'has-sales':''} ${k===today?'today':''} ${isSelected(k)?'sel':''}`}
+            onClick={()=>pick(k)}
+            title={d?`${d.count} sale${d.count===1?'':'s'} · ${format(d.total)}${d.units?` · ${d.units} units`:''}`:'No sales'}>
+            <b>{day}</b>
+            {d ? <><small style={{fontWeight:700}}>{format(d.total)}</small><small>{d.count} sale{d.count===1?'':'s'}</small></> : <small style={{opacity:.5}}>—</small>}
+          </button>
+        })}
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',gap:'8px',flexWrap:'wrap',fontSize:'10px',color:'#6b7d76',marginTop:'8px'}}>
+        <span>Click a day to filter it · then click another day to select a range (click the same day again for a single day){totalSales?` · ${totalSales} sale${totalSales===1?'':'s'} in this filtered list`:''}</span>
+        <span>{selStart? (selEnd && selEnd!==selStart ? `${readableDate(selStart)} → ${readableDate(selEnd)}` : readableDate(selStart)) : 'All dates'}</span>
+      </div>
+    </div>
+  );
+}
+
+function InvoicesPage({sales:salesAll,products=[],isOwner,filter,setFilter,onViewInvoice,onViewReceipt,employees}){
+  const [range,setRange]=useState({from:'',to:''});
+  const [showCalendar,setShowCalendar]=useState(true);
+  const sales = useMemo(()=>{
+    if(!range.from) return salesAll;
+    const end = range.to || range.from;
+    return salesAll.filter(s=>s.date>=range.from && s.date<=end);
+  },[salesAll,range]);
+  const clearRange = ()=>{ setRange({from:'',to:''}); setFilter(f=>({...f,date:'All'})) };
+  const presetRange = (id)=>{
+    const now = new Date();
+    const iso = (d)=>d.toISOString().slice(0,10);
+    if(id==='all') return clearRange();
+    if(id==='Today') return setRange({from:todayKey(),to:todayKey()});
+    if(id==='Yesterday'){ const d=new Date(now); d.setDate(d.getDate()-1); return setRange({from:iso(d),to:iso(d)}) }
+    if(id==='Week'){ const d=new Date(now); d.setDate(d.getDate()-6); return setRange({from:iso(d),to:todayKey()}) }
+    if(id==='Month') return setRange({from:now.toISOString().slice(0,7)+'-01',to:todayKey()});
+  };
   const total = sales.reduce((s,x)=>s+Number(x.total||0),0);
+  const totals = sales.reduce((t,x)=>{
+    t.items += saleUnits(x);
+    t.total += Number(x.total||0);
+    t.cost += saleCost(x,products);
+    t.profit += saleProfit(x,products);
+    return t;
+  },{items:0,total:0,cost:0,profit:0});
+  const totalMargin = totals.total ? (totals.profit/totals.total*100) : 0;
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history':'My sales history — today'}</h1></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Items','Payment','Total']; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,s.itemCount,s.payment,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
+      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> {isOwner?'SALES HISTORY · OWNER':'SALES HISTORY'}</div><h1>{isOwner?'Sales history & receipts':'My sales history — today'}</h1>{isOwner && <p>Every invoice from every cashier, filterable by calendar date, employee, payment and search.</p>}</div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span>{range.from && <span className="kpi" style={{background:'#e6f4f1',color:'#0f766e'}}><CalendarDays size={14}/> <b>{range.to && range.to!==range.from?`${readableDate(range.from)} → ${readableDate(range.to)}`:readableDate(range.from)}</b></span>}<span className="kpi"><Package size={14}/> <b>{totals.items.toLocaleString()}</b> products bought</span>{isOwner && <span className="kpi" style={{background:'#ecfdf5'}}><PiggyBank size={14}/> <b>{format(totals.profit)}</b> profit</span>}<button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Units bought','Payment','Total',...(isOwner?['Profit']:[])]; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,saleUnits(s),s.payment,s.total,...(isOwner?[saleProfit(s,products).toFixed(2)]:[])]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${range.from?(range.to&&range.to!==range.from?`${range.from}_to_${range.to}`:range.from):todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
+
+      <div className="card" style={{marginBottom:'14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+          <div><h2 style={{display:'flex',alignItems:'center',gap:'7px'}}><CalendarDays size={16} color="#0f766e"/> Sales calendar</h2><p className="sub">Click a day, or click two days to select a range — the table and totals follow</p></div>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+            {[['Today','Today'],['Yesterday','Yesterday'],['Week','Last 7 days'],['Month','This month'],['all','All dates']].map(([id,label])=>
+              <button key={id} className="btn small ghost" onClick={()=>presetRange(id)}>{label}</button>)}
+            <button className="btn small" onClick={()=>setShowCalendar(v=>!v)}>{showCalendar?'Hide':'Show'} calendar</button>
+          </div>
+        </div>
+        {showCalendar && <SalesCalendar sales={salesAll} products={products} isOwner={isOwner} from={range.from} to={range.to}
+          onSelect={(a,b)=>setRange({from:a,to:b})} onClear={clearRange}/>}
+      </div>
 
       <div className="card">
         <div className="toolbar">
           <div className="search" style={{maxWidth:'320px'}}><Search size={16}/><input value={filter.search} onChange={e=>setFilter(f=>({...f,search:e.target.value}))} onKeyDown={selectOnEnter} placeholder="Search invoice, customer, seller…"/></div>
           {isOwner && <select value={filter.cashier||'All'} onChange={e=>setFilter(f=>({...f,cashier:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All employees</option>{employees.filter(e=>e.role!=='owner').map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>}
           <select value={filter.payment} onChange={e=>setFilter(f=>({...f,payment:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option><option>Cash</option><option>MoMo</option><option>Gift</option></select>
-          {isOwner && <select value={filter.date} onChange={e=>setFilter(f=>({...f,date:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>}
+          {isOwner && <select value={filter.date} onChange={e=>{ setFilter(f=>({...f,date:e.target.value})); setRange({from:'',to:''}) }} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>}
         </div>
-        <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>SELLER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th><th>STATUS</th><th></th></tr></thead><tbody>
-          {sales.map(s=><tr key={s.id}><td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.id}</small></td><td><b>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td><td>{s.customerName}</td><td>{s.cashier}</td><td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td><td>{s.itemCount}</td><td><b>{format(s.total)}</b></td><td><span className="status ok"><i/>Paid</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td></tr>)}
-        </tbody></table></div>
-        {sales.length===0 && <div className="empty-state"><FileText size={20}/><b>No sales found</b><small>{isOwner?'Try different filters':'Sales you complete today will appear here'}</small></div>}
+        <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>SELLER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th>{isOwner&&<th>PROFIT</th>}<th>STATUS</th><th></th></tr></thead><tbody>
+          {sales.map(s=>{ const profit = saleProfit(s,products); return <tr key={s.id}><td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.id}</small></td><td><b>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td><td>{s.customerName}</td><td>{s.cashier}</td><td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td><td><b>{saleUnits(s)}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>bought</small></td><td><b>{format(s.total)}</b></td>{isOwner&&<td><b style={{color:profit>0?'#065f46':profit<0?'#991b1b':'#6b7d76'}}>{format(profit)}</b></td>}<td><span className="status ok"><i/>Paid</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td></tr>})}
+        </tbody>
+        {sales.length>0 && <tfoot><tr>
+          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{sales.length} invoice{sales.length===1?'':'s'}</small></td>
+          <td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td>
+          <td><b>{totals.items.toLocaleString()}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>bought</small></td>
+          <td><b>{format(totals.total)}</b></td>
+          {isOwner&&<td><b style={{color:totals.profit>0?'#065f46':'#991b1b'}}>{format(totals.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{totalMargin.toFixed(0)}% · cost {format(totals.cost)}</small></td>}
+          <td style={{fontSize:'10px',color:'#6b7d76'}}>all paid</td><td></td>
+        </tr></tfoot>}
+        </table></div>
+        {sales.length===0 && <div className="empty-state"><FileText size={20}/><b>No sales found</b><small>{range.from?'No sales on the selected date range — pick another day on the calendar':'Try different filters'}</small></div>}
       </div>
     </div>
   );
@@ -1220,7 +1549,17 @@ function GiftAccountPage({giftCards,customers,sales,onAdd,onPayAccount}){
               const used = sales.filter(s=>s.payment==='Gift' && s.paymentDetail?.code===g.code).length;
               return <tr key={g.id}><td><b style={{fontFamily:'monospace',fontSize:'12px'}}>{g.code}</b></td><td>{g.customerName||'—'}</td><td><b style={{color:g.balance>0?'#065f46':'#991b1b'}}>{format(g.balance)}</b></td><td>{format(g.original)}</td><td>{readableDate(g.expiry)}</td><td><span className={`status ${g.status==='active'?'ok':g.status==='used'?'bad':'warn'}`}><i/>{g.status}</span></td><td>{used} sales</td></tr>
             })}
-          </tbody></table></div>
+          </tbody>
+          {giftCards.length>0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{giftCards.length} card{giftCards.length===1?'':'s'} · {giftCards.filter(g=>g.status==='active').length} active</small></td>
+            <td style={{color:'#6b7d76'}}>—</td>
+            <td><b>{format(giftCards.reduce((s,g)=>s+Number(g.balance||0),0))}</b></td>
+            <td><b>{format(giftCards.reduce((s,g)=>s+Number(g.original||0),0))}</b></td>
+            <td style={{color:'#6b7d76',fontSize:'10px'}}>{format(giftCards.reduce((s,g)=>s+Math.max(0,Number(g.original||0)-Number(g.balance||0)),0))} redeemed</td>
+            <td></td>
+            <td><b>{sales.filter(s=>s.payment==='Gift').length}</b> {sales.filter(s=>s.payment==='Gift').length===1?'sale':'sales'}</td>
+          </tr></tfoot>}
+          </table></div>
         </div>
       )}
 
@@ -1233,7 +1572,14 @@ function GiftAccountPage({giftCards,customers,sales,onAdd,onPayAccount}){
                 const last = sales.filter(s=>s.customerId===c.id).sort((a,b)=>b.date.localeCompare(a.date))[0];
                 return <tr key={c.id}><td><b>{c.name}</b></td><td>{c.phone}</td><td><b style={{color:'#991b1b'}}>{format(c.balance)}</b></td><td>{last?`${readableDate(last.date)} · ${format(last.total)}`:'—'}</td><td><button className="btn small primary" onClick={()=>{ const amt=prompt(`Payment amount for ${c.name} (owes ${format(c.balance)}):`, String(c.balance)); if(amt && Number(amt)>0) onPayAccount(c.id, Number(amt))}}><DollarSign size={12}/> Collect</button></td></tr>
               })}
-            </tbody></table></div>
+            </tbody>
+            {receivable.length>0 && <tfoot><tr>
+              <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{receivable.length} account{receivable.length===1?'':'s'}</small></td>
+              <td style={{color:'#6b7d76'}}>—</td>
+              <td><b style={{color:'#991b1b'}}>{format(totalRec)}</b></td>
+              <td style={{color:'#6b7d76'}}>—</td><td></td>
+            </tr></tfoot>}
+            </table></div>
             {receivable.length===0 && <div className="empty-state"><CheckCircle2 size={20}/><b>All accounts clear</b><small>No customers owe</small></div>}
           </div>
           <div className="card" style={{background:'#fffbeb',borderColor:'#fde68a'}}>
@@ -1255,6 +1601,8 @@ function StaffPage({employees,sales,attendance,currentUser,onEdit,onAdd,onViewSa
     .filter(a=> attFilter==='All' || (attFilter==='Open' && !a.out) || (attFilter==='Today' && a.date===today))
     .slice().sort((a,b)=> (b.date+(b.in||'')).localeCompare(a.date+(a.in||'')));
   const totalHoursToday = attendance.filter(a=>a.date===today).reduce((s,a)=>s+Number(a.hours||0),0);
+  const attHours = attRows.reduce((s,a)=>s+Number(a.hours||0),0);
+  const attOpen = attRows.filter(a=>!a.out).length;
   const payroll = employees.reduce((s,e)=>s+Number(e.salary||0),0);
 
   return (
@@ -1319,7 +1667,15 @@ function StaffPage({employees,sales,attendance,currentUser,onEdit,onAdd,onViewSa
                 <td><span className={`status ${a.out?'ok':'info'}`}><i/>{a.out?'Complete':'On shift'}</span></td>
               </tr>
             ))}
-          </tbody></table></div>
+          </tbody>
+          {attRows.length>0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{attRows.length} record{attRows.length===1?'':'s'}</small></td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>{new Set(attRows.map(a=>a.name)).size} staff</td>
+            <td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td>
+            <td><b>{Number(attHours.toFixed(2))}h</b></td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>{attOpen} open shift{attOpen===1?'':'s'}</td>
+          </tr></tfoot>}
+          </table></div>
           {attRows.length===0 && <div className="empty-state"><ClipboardList size={20}/><b>No attendance records</b><small>Use “Clock in” in the top bar to start a shift</small></div>}
           <div style={{marginTop:'10px',fontSize:'11px',color:'#6b7d76'}}>Staff clock in and out from the top bar of any workspace. Hours are calculated automatically.</div>
         </div>
@@ -1344,6 +1700,7 @@ function ReportsPage({sales,products,customers,giftCards,expenses}){
   const cogs = filtered.reduce((sum,s)=>{
     let c=0; s.items?.forEach(it=>{ const prod=products.find(pr=>pr.id===it.productId); c+=(prod?.cost||0)*it.qty }); return sum+c;
   },0);
+  const unitsBought = filtered.reduce((sum,x)=>sum+saleUnits(x),0);
   const grossProfit = total - cogs;
   const netProfit = grossProfit - expenseTotal;
   const byPayment = paymentMethods.map(pm=>({method:pm.id,total:filtered.filter(s=>s.payment===pm.id).reduce((s,x)=>s+Number(x.total||0),0),count:filtered.filter(s=>s.payment===pm.id).length}));
@@ -1374,8 +1731,12 @@ function ReportsPage({sales,products,customers,giftCards,expenses}){
       ['Expenses by category','Amount (GH\u20b5)','Entries'],
       ...byCategory.map(c=>[c.cat,c.total.toFixed(2),c.count]),
       [],
-      ['Invoice','Date','Cashier','Payment','Total'],
-      ...filtered.map(s=>[s.invoiceNumber,s.date,s.cashier,s.payment,Number(s.total).toFixed(2)]),
+      ['Invoice','Date','Cashier','Payment','Units bought','Cost of goods','Profit','Total'],
+      ...filtered.map(s=>{
+        const c = saleCost(s, products);
+        return [s.invoiceNumber,s.date,s.cashier,s.payment,saleUnits(s),c.toFixed(2),(Number(s.total||0)-c).toFixed(2),Number(s.total).toFixed(2)];
+      }),
+      ['TOTAL','','','',unitsBought,cogs.toFixed(2),grossProfit.toFixed(2),total.toFixed(2)],
       [],
       ['Expense','Date','Category','Note','Amount'],
       ...filteredExp.map(e=>[e.id,e.date,e.category,e.note,Number(e.amount).toFixed(2)]),
@@ -1390,8 +1751,8 @@ function ReportsPage({sales,products,customers,giftCards,expenses}){
       <div className="page-head"><div><div className="eyebrow"><BarChart3 size={12}/> BUSINESS REPORT</div><h1>Business report — revenue, expenses & profit</h1><p>Revenue, cost of goods, expenses and net profit with payment and category breakdowns. All cashier accounts combined.</p></div><div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>{['today','week','month','all'].map(r=><button key={r} className={`btn small ${range===r?'primary':'ghost'}`} onClick={()=>setRange(r)}>{r.toUpperCase()}</button>)}<button className="btn small" onClick={exportReport}><Download size={12}/> Export CSV</button></div></div>
 
       <div className="grid metrics" style={{marginBottom:'14px'}}>
-        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><DollarSign size={16}/></div></div><div className="metric-label">Revenue ({range})</div><div className="metric-value">{format(total)}</div><div className="metric-note">{filtered.length} invoices</div></div>
-        <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><TrendingUp size={16}/></div></div><div className="metric-label">Gross profit (after COGS)</div><div className="metric-value">{format(grossProfit)}</div><div className="metric-note">{total?`${(grossProfit/total*100).toFixed(1)}% margin · COGS ${format(cogs)}`:`COGS ${format(cogs)}`}</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><DollarSign size={16}/></div></div><div className="metric-label">Revenue ({range})</div><div className="metric-value">{format(total)}</div><div className="metric-note">{filtered.length} invoices · <b>{unitsBought.toLocaleString()}</b> products bought</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><TrendingUp size={16}/></div></div><div className="metric-label">Gross profit (after COGS)</div><div className="metric-value">{format(grossProfit)}</div><div className="metric-note">{total?`${(grossProfit/total*100).toFixed(1)}% margin · COGS ${format(cogs)}`:`COGS ${format(cogs)}`} · summed over {filtered.length} invoices</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><Coins size={16}/></div></div><div className="metric-label">Expenses ({range})</div><div className="metric-value">{format(expenseTotal)}</div><div className="metric-note"><button className="link-btn" onClick={()=>document.getElementById('exp-breakdown')?.scrollIntoView({behavior:'smooth'})}>{filteredExp.length} entries · {byCategory.length} categories</button></div></div>
         <div className="card metric-card"><div className="metric-top"><div className={`metric-icon ${netProfit>=0?'green':'blue'}`}><TrendingDown size={16}/></div></div><div className="metric-label">Net profit (after expenses)</div><div className="metric-value" style={{color:netProfit>=0?'#065f46':'#991b1b'}}>{format(netProfit)}</div><div className="metric-note">{netProfit>=0?'Profitable in this period':'Running a loss in this period'}</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><Wallet size={16}/></div></div><div className="metric-label">Money owed by customers</div><div className="metric-value">{format(receivable)}</div><div className="metric-note">Owed to owner</div></div>
@@ -1501,10 +1862,11 @@ function MessagesPage({messages,employees,currentUser,isOwner,onSend,onMarkRead}
   );
 }
 
-function StaffSalesModal({employee,sales,onClose,onViewInvoice,onViewReceipt}){
+function StaffSalesModal({employee,sales,products=[],onClose,onViewInvoice,onViewReceipt}){
   const empSales = sales.filter(s=>s.cashierId===employee.id || s.cashier===employee.name);
   const total = empSales.reduce((s,x)=>s+Number(x.total||0),0);
-  const items = empSales.reduce((s,x)=>s+Number(x.itemCount||0),0);
+  const items = empSales.reduce((s,x)=>s+saleUnits(x),0);
+  const profit = empSales.reduce((s,x)=>s+saleProfit(x,products),0);
   return (
     <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
       <div className="modal wide"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#dbeafe',color:'#1e40af',display:'grid',placeItems:'center'}}><FileText size={18}/></div><div><h3>{employee.name} — sales history</h3><p>Every sale recorded by this employee · combined to owner</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
@@ -1512,7 +1874,8 @@ function StaffSalesModal({employee,sales,onClose,onViewInvoice,onViewReceipt}){
           <div className="kpi-row">
             <span className="kpi"><FileText size={14}/> <b>{empSales.length}</b> invoices</span>
             <span className="kpi"><Wallet size={14}/> <b>{format(total)}</b> total</span>
-            <span className="kpi"><Package size={14}/> <b>{items}</b> items sold</span>
+            <span className="kpi"><Package size={14}/> <b>{items}</b> products bought</span>
+            <span className="kpi" style={{background:'#ecfdf5'}}><PiggyBank size={14}/> <b>{format(profit)}</b> profit</span>
             <button className="btn small" style={{marginLeft:'auto'}} onClick={()=>{ const header=['Invoice','Date','Time','Customer','Payment','Items','Total']; const rows=empSales.map(s=>[s.invoiceNumber,s.date,s.time,s.customerName,s.payment,s.itemCount,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${employee.name.replaceAll(' ','-')}-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={12}/> Export CSV</button>
           </div>
           <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th><th></th></tr></thead><tbody>
@@ -1527,7 +1890,14 @@ function StaffSalesModal({employee,sales,onClose,onViewInvoice,onViewReceipt}){
                 <td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td>
               </tr>
             ))}
-          </tbody></table></div>
+          </tbody>
+          {empSales.length>0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{empSales.length} invoice{empSales.length===1?'':'s'}</small></td>
+            <td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td>
+            <td><b>{items.toLocaleString()}</b> bought</td>
+            <td><b>{format(total)}</b></td><td></td>
+          </tr></tfoot>}
+          </table></div>
           {empSales.length===0 && <div className="empty-state"><FileText size={20}/><b>No sales yet</b><small>Sales made by {employee.name} will appear here</small></div>}
         </div>
         <div className="modal-foot"><button className="btn primary" onClick={onClose}>Close</button></div>
@@ -1586,7 +1956,19 @@ function ExpensesPage({expenses,onEdit,onAdd,onDelete}){
                 <td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onEdit(e)}><Edit2 size={12}/> Edit</button><button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm('Delete this expense?')) onDelete(e.id)}}><Trash2 size={12}/></button></div></td>
               </tr>
             ))}
-          </tbody></table></div>
+          </tbody>
+          {filtered.length>0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{filtered.length} entr{filtered.length===1?'y':'ies'}</small></td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>{byCategory.length} categor{byCategory.length===1?'y':'ies'}</td>
+            <td style={{color:'#6b7d76'}}>—</td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>
+              {paymentMethods.filter(pm=>filtered.some(e=>e.payment===pm.id)).map(pm=>`${pm.label} ${format(filtered.filter(e=>e.payment===pm.id).reduce((s,e)=>s+Number(e.amount||0),0))}`).join(' · ')||'—'}
+            </td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>{new Set(filtered.map(e=>e.by)).size} staff</td>
+            <td><b style={{color:'#991b1b'}}>{format(total)}</b></td>
+            <td></td>
+          </tr></tfoot>}
+          </table></div>
           {filtered.length===0 && <div className="empty-state"><Coins size={20}/><b>No expenses found</b><small>Try different filters or record a new expense</small></div>}
         </div>
 
@@ -1665,7 +2047,7 @@ function ExpenseModal({expense,onClose,onSave,employees}){
 }
 
 function ProductModal({product,categories,defaultLowStock=5,onClose,onSave}){
-  const [form,setForm]=useState(product||{name:'',sku:'',category:'Other',brand:'',price:'',cost:'',stock:'',barcode:'',supplier:'',lowStockAt:defaultLowStock});
+  const [form,setForm]=useState(product||{name:'',sku:'',category:'Other',brand:'',price:'',cost:'',stock:'',barcode:'',supplier:'',expiry:'',lowStockAt:defaultLowStock});
   const [err,setErr]=useState('');
   const submit = (e)=>{
     e.preventDefault();
@@ -1683,6 +2065,7 @@ function ProductModal({product,categories,defaultLowStock=5,onClose,onSave}){
       barcode: form.barcode.trim(),
       supplier: form.supplier?.trim()||'',
       lowStockAt: Math.max(0, Math.floor(Number(form.lowStockAt ?? 5))),
+      expiry: (form.expiry||'').trim(),
     };
     onSave(p);
   };
@@ -1695,6 +2078,7 @@ function ProductModal({product,categories,defaultLowStock=5,onClose,onSave}){
           <div className="two"><div className="field"><label>Selling price (GH₵) *</label><input type="number" step="0.01" min="0" value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))} required/></div><div className="field"><label>Cost price (for profit)</label><input type="number" step="0.01" min="0" value={form.cost} onChange={e=>setForm(f=>({...f,cost:e.target.value}))} placeholder="0"/></div></div>
           <div className="two"><div className="field"><label>Stock quantity *</label><input type="number" min="0" step="1" value={form.stock} onChange={e=>setForm(f=>({...f,stock:e.target.value}))} required/></div><div className="field"><label>Reorder level (low stock alert at)</label><input type="number" min="0" step="1" value={form.lowStockAt??5} onChange={e=>setForm(f=>({...f,lowStockAt:e.target.value}))}/></div></div>
           <div className="two"><div className="field"><label>SKU</label><input value={form.sku} onChange={e=>setForm(f=>({...f,sku:e.target.value}))} placeholder="Auto if empty"/></div><div className="field"><label>Supplier (optional)</label><input value={form.supplier||''} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))} placeholder="e.g. Royal Farms"/></div></div>
+          <div className="field"><label>Expiry date</label><input type="date" value={form.expiry||''} onChange={e=>setForm(f=>({...f,expiry:e.target.value}))}/><small>Items inside {EXPIRY_SOON_DAYS} days of expiry are flagged automatically. Leave empty if not applicable.</small></div>
           <div className="field"><label>Barcode (optional)</label><input value={form.barcode} onChange={e=>setForm(f=>({...f,barcode:e.target.value}))} placeholder="Scan or enter"/></div>
           {err && <div style={{color:'#b91c1c',fontSize:'12px'}}>{err}</div>}
         </div><div className="modal-foot"><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" className="btn primary"><Check size={14}/>{product?'Save changes':'Add item'}</button></div></form>
@@ -1968,6 +2352,7 @@ function InvoiceModal({sale,shop=SHOP,receiptFooter='',onClose,onPrintReceipt}){
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',margin:'14px 0',padding:'10px',background:'#f9fbf9',border:'1px solid #e7ece8',borderRadius:'8px',fontSize:'11px'}}><div><small style={{color:'#6b7d76',fontWeight:700}}>BILL TO</small><b style={{display:'block'}}>{sale.customerName}</b></div><div><small style={{color:'#6b7d76',fontWeight:700}}>SELLER NAME</small><b style={{display:'block'}}>{sale.cashier}</b></div><div><small style={{color:'#6b7d76',fontWeight:700}}>PAYMENT</small><b style={{display:'block'}}>{sale.payment} {sale.paymentDetail?.phone||sale.paymentDetail?.code||''}</b></div></div>
           <div className="invoice-line head"><span>PRODUCT</span><span>QTY</span><span>UNIT</span><span>TOTAL</span></div>
           {sale.items?.map((it,i)=><div key={i} className="invoice-line"><span>{it.name}</span><span>{it.qty}</span><span>{format(it.unitPrice)}</span><span>{format(it.lineTotal)}</span></div>)}
+          {(sale.items?.length||0)>0 && <div className="invoice-line" style={{borderTop:'1px solid #e7ece8',background:'#f9fbf9',fontWeight:800}}><span>Totals</span><span>{sale.items.reduce((s,it)=>s+Number(it.qty||0),0)}</span><span style={{color:'#6b7d76'}}>—</span><span>{format(sale.items.reduce((s,it)=>s+Number(it.lineTotal||0),0))}</span></div>}
           <div className="invoice-tot"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{sale.discount>0 && <div><span>Discount</span><b>-{format(sale.discount)}</b></div>}<div className="grand"><span>Total paid</span><b>{format(sale.total)}</b></div></div>
         </div>
         <div style={{padding:'12px 20px',borderTop:'1px solid #e7ece8',background:'#fcfdfc',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'11px',color:'#6b7d76',display:'flex',alignItems:'center',gap:'5px'}}><ShieldCheck size={12}/> {receiptFooter || `Thank you for shopping with ${shop.name}!`}</span><div style={{display:'flex',gap:'6px'}}><button className="btn small no-print" onClick={()=>onPrintReceipt(sale)}><Printer size={14}/> Print receipt</button><button className="btn small primary no-print" onClick={()=>window.print()}><Printer size={14}/> Print invoice</button></div></div>

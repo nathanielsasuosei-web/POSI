@@ -292,7 +292,16 @@ export function LeadsPage({ customers, sales, products, onStartSale }) {
               <td><b className="table-primary">{format(lead.spend)}</b><small className="table-secondary">{lead.visits} {lead.visits === 1 ? 'visit' : 'visits'}</small></td>
               <td><button className="btn small primary" onClick={() => onStartSale(lead.customer)}><ShoppingCart size={12}/> New sale</button></td>
             </tr>)}
-          </tbody></table></div>
+          </tbody>
+          {visibleLeads.length > 0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'var(--muted)'}}>{visibleLeads.length} lead{visibleLeads.length === 1 ? '' : 's'} shown</small></td>
+            <td style={{color:'var(--muted)'}}>—</td>
+            <td style={{color:'var(--muted)'}}>—</td>
+            <td style={{color:'var(--muted)'}}>—</td>
+            <td><b>{format(visibleLeads.reduce((sum, lead) => sum + Number(lead.spend || 0), 0))}</b><small style={{display:'block',fontSize:'10px',color:'var(--muted)'}}>{visibleLeads.reduce((sum, lead) => sum + Number(lead.visits || 0), 0)} visits</small></td>
+            <td></td>
+          </tr></tfoot>}
+          </table></div>
           {!visibleLeads.length && <div className="empty-state"><Users size={22}/><b>No matching customer leads</b><small>Add named customers at checkout or try another search.</small></div>}
         </div>
 
@@ -387,7 +396,17 @@ export function MaintenancePage({ records, onSave, onComplete, onDelete }) {
                 <td><div className="row-actions">{record.status !== 'completed' && <button className="btn small primary" onClick={() => setCompleting(record)}><Check size={12}/> Complete</button>}<button className="btn icon small" title="Edit maintenance" onClick={() => setModal({ record })}><Edit2 size={13}/></button><button className="btn icon small danger" title="Delete maintenance record" onClick={() => { if (confirm(`Delete the maintenance record for ${record.asset}?`)) onDelete(record.id); }}><Trash2 size={13}/></button></div></td>
               </tr>;
             })}
-          </tbody></table></div>
+          </tbody>
+          {filtered.length > 0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'var(--muted)'}}>{filtered.length} record{filtered.length === 1 ? '' : 's'}</small></td>
+            <td style={{color:'var(--muted)'}}>—</td>
+            <td style={{color:'var(--muted)',fontSize:'10px'}}>{filtered.filter(r => r.status === 'completed').length} completed</td>
+            <td style={{color:'var(--muted)'}}>—</td>
+            <td><b>{format(filtered.reduce((sum, r) => sum + Number((r.status === 'completed' ? r.actualCost : r.cost) || 0), 0))}</b><small style={{display:'block',fontSize:'10px',color:'var(--muted)'}}>{format(filtered.reduce((sum, r) => sum + Number(r.cost || 0), 0))} estimated</small></td>
+            <td style={{fontSize:'10px',color:'var(--muted)'}}>{filtered.filter(r => maintenanceState(r).label === 'Overdue').length} overdue</td>
+            <td></td>
+          </tr></tfoot>}
+          </table></div>
           {!filtered.length && <div className="empty-state"><Wrench size={22}/><b>No maintenance records in this view</b><small>Change the filter or schedule a new equipment service.</small></div>}
         </div>
 
