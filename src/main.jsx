@@ -732,7 +732,7 @@ function App({offline}){
                   <div className="alert-pop-list">
                     {lowStockItems.length? lowStockItems.map(p=>(
                       <div key={p.id} className="alert-row">
-                        <div style={{flex:1,minWidth:0}}><b style={{fontSize:'11px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.stock} left · reorder at {reorderOf(p)}</small></div>
+                        <div style={{flex:1,minWidth:0}}><b style={{fontSize:'11px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{p.stock} left · reorder at {reorderOf(p)}{expiryOf(p).state!=='none'?` · exp ${readableDate(p.expiry)}${expiryOf(p).state==='expired'?' (expired)':expiryOf(p).state==='soon'?` (${expiryOf(p).label})`:''}`:''}</small></div>
                         <span className={`status ${p.stock===0?'bad':'warn'}`}><i/>{p.stock===0?'Out':'Low'}</span>
                         {isOwner && <button className="btn small" onClick={()=>{setStockModal({product:p,mode:'restock'});setAlertsOpen(false)}}>Restock</button>}
                       </div>
@@ -942,7 +942,13 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
               const empTotal = empSales.reduce((s,x)=>s+Number(x.total||0),0);
               return <tr key={emp.id}><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className="avatar cashier" style={{width:'28px',height:'28px'}}>{emp.initials}</div><span><b style={{fontSize:'12px'}}>{emp.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{emp.role} · {emp.shift}</small></span></div></td><td>{empSales.length}</td><td><b>{format(empTotal)}</b></td><td><span className="status ok"><i/> {emp.status}</span></td></tr>
             })}
-          </tbody></table></div>
+          </tbody>
+          <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{employees.filter(e=>e.role!=='owner').length} cashiers</small></td>
+            <td><b>{employees.filter(e=>e.role!=='owner').reduce((s,emp)=>s+sales.filter(x=>x.cashierId===emp.id||x.cashier===emp.name).length,0)}</b></td>
+            <td><b>{format(employees.filter(e=>e.role!=='owner').reduce((s,emp)=>s+sales.filter(x=>x.cashierId===emp.id||x.cashier===emp.name).reduce((a,x)=>a+Number(x.total||0),0),0))}</b></td>
+            <td><span style={{fontSize:'10px',color:'#6b7d76'}}>{sales.length} invoices shop-wide</span></td>
+          </tr></tfoot></table></div>
           <div style={{marginTop:'10px',fontSize:'11px',color:'#6b7d76',display:'flex',justifyContent:'space-between'}}><span>Combined to owner: {format(combinedTotal)}</span><span>{sales.length} total invoices</span></div>
         </div>
 
@@ -952,7 +958,7 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
             <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
               {lowStock.slice(0,6).map(p=>(
                 <div key={p.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px',border:'1px solid #fde68a',background:'#fffbeb',borderRadius:'8px'}}>
-                  <div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#92400e'}}>{p.stock} left · reorder at {reorderOf(p)}</small></div>
+                  <div style={{flex:1,minWidth:0}}><b style={{fontSize:'12px'}}>{p.name}</b><small style={{display:'block',fontSize:'10px',color:'#92400e'}}>{p.stock} left · reorder at {reorderOf(p)}{p.expiry?` · exp ${readableDate(p.expiry)}`:''}</small></div>
                   <span className={`status ${p.stock===0?'bad':'warn'}`}><i/>{p.stock===0?'Out':'Low'}</span>
                   <button className="btn small" onClick={()=>onRestock(p)}>Restock</button>
                 </div>
@@ -1228,7 +1234,19 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
               <td>{m.by}</td><td style={{color:'#6b7d76'}}>{m.note||'—'}</td>
             </tr>
           })}
-        </tbody></table></div>
+        </tbody>
+        {stockMoves.length>0 && <tfoot><tr>
+          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{Math.min(15,stockMoves.length)} of {stockMoves.length} moves</small></td>
+          <td style={{color:'#6b7d76'}}>—</td>
+          <td style={{fontSize:'10px',color:'#6b7d76'}}>
+            <span style={{fontWeight:700,color:'#1e40af'}}>in +{stockMoves.slice(0,15).filter(m=>m.qty>0).reduce((s,m)=>s+Number(m.qty||0),0)}</span>{' · '}
+            <span style={{fontWeight:700,color:'#991b1b'}}>out {stockMoves.slice(0,15).filter(m=>m.qty<0).reduce((s,m)=>s+Number(m.qty||0),0)}</span>
+          </td>
+          <td><b style={{color:stockMoves.slice(0,15).reduce((s,m)=>s+Number(m.qty||0),0)>=0?'#065f46':'#991b1b'}}>{(()=>{ const n=stockMoves.slice(0,15).reduce((s,m)=>s+Number(m.qty||0),0); return n>0?`+${n}`:n })()} net</b></td>
+          <td style={{color:'#6b7d76',fontSize:'10px'}}>{new Set(stockMoves.slice(0,15).map(m=>m.by)).size} staff</td>
+          <td style={{color:'#6b7d76',fontSize:'10px'}}>{stockMoves.slice(0,15).filter(m=>m.note).length} with notes</td>
+        </tr></tfoot>}
+        </table></div>
         {stockMoves.length===0 && <div className="empty-state"><History size={20}/><b>No stock moves yet</b><small>Restocks, sales and adjustments will appear here</small></div>}
       </div>}
     </div>
@@ -1244,6 +1262,7 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
     return `${c.name} ${c.phone} ${c.email}`.toLowerCase().includes(q.toLowerCase());
   });
   const totalReceivable = filtered.reduce((s,c)=>s+Number(c.balance||0),0);
+  const totals = filtered.reduce((t,c)=>{ t.balance+=Number(c.balance||0); t.spent+=Number(c.totalSpent||0); t.visits+=Number(c.visits||0); if(Number(c.balance||0)>0) t.owing+=1; return t; },{balance:0,spent:0,visits:0,owing:0});
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><Users size={12}/> CUSTOMER LIST</div><h1>Customer list</h1></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add customer</button></div>
@@ -1255,7 +1274,16 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
             const custSales = sales.filter(s=>s.customerId===c.id);
             return <tr key={c.id}><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div className="avatar cashier" style={{width:'28px',height:'28px',fontSize:'10px'}}>{initials(c.name)}</div><span><b style={{fontSize:'12px'}}>{c.name}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{c.email||c.address}</small></span></div></td><td>{c.phone||'—'}</td><td><b style={{color:c.balance>0?'#991b1b':'#065f46'}}>{format(c.balance)}</b></td><td>{format(c.totalSpent)}</td><td>{c.visits||custSales.length}</td><td><span className={`status ${c.balance>0?'warn':'ok'}`}><i/>{c.balance>0?'Owes':'Clear'}</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onEdit(c)}><Edit2 size={12}/> Edit</button>{c.balance>0 && isOwner && <button className="btn small primary" onClick={()=>{setPayModal(c);setPayAmount(String(c.balance))}}><DollarSign size={12}/> Pay</button>}</div></td></tr>
           })}
-        </tbody></table></div>
+        </tbody>
+        {filtered.length>0 && <tfoot><tr>
+          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{filtered.length} customer{filtered.length===1?'':'s'} · {totals.owing} owing</small></td>
+          <td style={{color:'#6b7d76'}}>—</td>
+          <td><b style={{color:totals.balance>0?'#991b1b':'#065f46'}}>{format(totals.balance)}</b></td>
+          <td><b>{format(totals.spent)}</b></td>
+          <td><b>{totals.visits.toLocaleString()}</b></td>
+          <td></td><td></td>
+        </tr></tfoot>}
+        </table></div>
       </div>
 
       {payModal && (
@@ -1275,6 +1303,7 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
 
 function InvoicesPage({sales,isOwner,filter,setFilter,onViewInvoice,onViewReceipt,employees}){
   const total = sales.reduce((s,x)=>s+Number(x.total||0),0);
+  const totals = sales.reduce((t,x)=>{ t.items+=Number(x.itemCount||0); t.total+=Number(x.total||0); return t; },{items:0,total:0});
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history':'My sales history — today'}</h1></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Items','Payment','Total']; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,s.itemCount,s.payment,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
@@ -1288,7 +1317,15 @@ function InvoicesPage({sales,isOwner,filter,setFilter,onViewInvoice,onViewReceip
         </div>
         <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>SELLER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th><th>STATUS</th><th></th></tr></thead><tbody>
           {sales.map(s=><tr key={s.id}><td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.id}</small></td><td><b>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td><td>{s.customerName}</td><td>{s.cashier}</td><td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td><td>{s.itemCount}</td><td><b>{format(s.total)}</b></td><td><span className="status ok"><i/>Paid</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td></tr>)}
-        </tbody></table></div>
+        </tbody>
+        {sales.length>0 && <tfoot><tr>
+          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{sales.length} invoice{sales.length===1?'':'s'}</small></td>
+          <td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td>
+          <td><b>{totals.items.toLocaleString()}</b> items</td>
+          <td><b>{format(totals.total)}</b></td>
+          <td style={{fontSize:'10px',color:'#6b7d76'}}>all paid</td><td></td>
+        </tr></tfoot>}
+        </table></div>
         {sales.length===0 && <div className="empty-state"><FileText size={20}/><b>No sales found</b><small>{isOwner?'Try different filters':'Sales you complete today will appear here'}</small></div>}
       </div>
     </div>
@@ -1318,7 +1355,17 @@ function GiftAccountPage({giftCards,customers,sales,onAdd,onPayAccount}){
               const used = sales.filter(s=>s.payment==='Gift' && s.paymentDetail?.code===g.code).length;
               return <tr key={g.id}><td><b style={{fontFamily:'monospace',fontSize:'12px'}}>{g.code}</b></td><td>{g.customerName||'—'}</td><td><b style={{color:g.balance>0?'#065f46':'#991b1b'}}>{format(g.balance)}</b></td><td>{format(g.original)}</td><td>{readableDate(g.expiry)}</td><td><span className={`status ${g.status==='active'?'ok':g.status==='used'?'bad':'warn'}`}><i/>{g.status}</span></td><td>{used} sales</td></tr>
             })}
-          </tbody></table></div>
+          </tbody>
+          {giftCards.length>0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{giftCards.length} card{giftCards.length===1?'':'s'} · {giftCards.filter(g=>g.status==='active').length} active</small></td>
+            <td style={{color:'#6b7d76'}}>—</td>
+            <td><b>{format(giftCards.reduce((s,g)=>s+Number(g.balance||0),0))}</b></td>
+            <td><b>{format(giftCards.reduce((s,g)=>s+Number(g.original||0),0))}</b></td>
+            <td style={{color:'#6b7d76',fontSize:'10px'}}>{format(giftCards.reduce((s,g)=>s+Math.max(0,Number(g.original||0)-Number(g.balance||0)),0))} redeemed</td>
+            <td></td>
+            <td><b>{sales.filter(s=>s.payment==='Gift').length}</b> {sales.filter(s=>s.payment==='Gift').length===1?'sale':'sales'}</td>
+          </tr></tfoot>}
+          </table></div>
         </div>
       )}
 
@@ -1331,7 +1378,14 @@ function GiftAccountPage({giftCards,customers,sales,onAdd,onPayAccount}){
                 const last = sales.filter(s=>s.customerId===c.id).sort((a,b)=>b.date.localeCompare(a.date))[0];
                 return <tr key={c.id}><td><b>{c.name}</b></td><td>{c.phone}</td><td><b style={{color:'#991b1b'}}>{format(c.balance)}</b></td><td>{last?`${readableDate(last.date)} · ${format(last.total)}`:'—'}</td><td><button className="btn small primary" onClick={()=>{ const amt=prompt(`Payment amount for ${c.name} (owes ${format(c.balance)}):`, String(c.balance)); if(amt && Number(amt)>0) onPayAccount(c.id, Number(amt))}}><DollarSign size={12}/> Collect</button></td></tr>
               })}
-            </tbody></table></div>
+            </tbody>
+            {receivable.length>0 && <tfoot><tr>
+              <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{receivable.length} account{receivable.length===1?'':'s'}</small></td>
+              <td style={{color:'#6b7d76'}}>—</td>
+              <td><b style={{color:'#991b1b'}}>{format(totalRec)}</b></td>
+              <td style={{color:'#6b7d76'}}>—</td><td></td>
+            </tr></tfoot>}
+            </table></div>
             {receivable.length===0 && <div className="empty-state"><CheckCircle2 size={20}/><b>All accounts clear</b><small>No customers owe</small></div>}
           </div>
           <div className="card" style={{background:'#fffbeb',borderColor:'#fde68a'}}>
@@ -1353,6 +1407,8 @@ function StaffPage({employees,sales,attendance,currentUser,onEdit,onAdd,onViewSa
     .filter(a=> attFilter==='All' || (attFilter==='Open' && !a.out) || (attFilter==='Today' && a.date===today))
     .slice().sort((a,b)=> (b.date+(b.in||'')).localeCompare(a.date+(a.in||'')));
   const totalHoursToday = attendance.filter(a=>a.date===today).reduce((s,a)=>s+Number(a.hours||0),0);
+  const attHours = attRows.reduce((s,a)=>s+Number(a.hours||0),0);
+  const attOpen = attRows.filter(a=>!a.out).length;
   const payroll = employees.reduce((s,e)=>s+Number(e.salary||0),0);
 
   return (
@@ -1417,7 +1473,15 @@ function StaffPage({employees,sales,attendance,currentUser,onEdit,onAdd,onViewSa
                 <td><span className={`status ${a.out?'ok':'info'}`}><i/>{a.out?'Complete':'On shift'}</span></td>
               </tr>
             ))}
-          </tbody></table></div>
+          </tbody>
+          {attRows.length>0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{attRows.length} record{attRows.length===1?'':'s'}</small></td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>{new Set(attRows.map(a=>a.name)).size} staff</td>
+            <td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td>
+            <td><b>{Number(attHours.toFixed(2))}h</b></td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>{attOpen} open shift{attOpen===1?'':'s'}</td>
+          </tr></tfoot>}
+          </table></div>
           {attRows.length===0 && <div className="empty-state"><ClipboardList size={20}/><b>No attendance records</b><small>Use “Clock in” in the top bar to start a shift</small></div>}
           <div style={{marginTop:'10px',fontSize:'11px',color:'#6b7d76'}}>Staff clock in and out from the top bar of any workspace. Hours are calculated automatically.</div>
         </div>
@@ -1625,7 +1689,14 @@ function StaffSalesModal({employee,sales,onClose,onViewInvoice,onViewReceipt}){
                 <td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td>
               </tr>
             ))}
-          </tbody></table></div>
+          </tbody>
+          {empSales.length>0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{empSales.length} invoice{empSales.length===1?'':'s'}</small></td>
+            <td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td>
+            <td><b>{items.toLocaleString()}</b> items</td>
+            <td><b>{format(total)}</b></td><td></td>
+          </tr></tfoot>}
+          </table></div>
           {empSales.length===0 && <div className="empty-state"><FileText size={20}/><b>No sales yet</b><small>Sales made by {employee.name} will appear here</small></div>}
         </div>
         <div className="modal-foot"><button className="btn primary" onClick={onClose}>Close</button></div>
@@ -1684,7 +1755,19 @@ function ExpensesPage({expenses,onEdit,onAdd,onDelete}){
                 <td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onEdit(e)}><Edit2 size={12}/> Edit</button><button className="btn small" style={{color:'#b91c1c'}} onClick={()=>{if(confirm('Delete this expense?')) onDelete(e.id)}}><Trash2 size={12}/></button></div></td>
               </tr>
             ))}
-          </tbody></table></div>
+          </tbody>
+          {filtered.length>0 && <tfoot><tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{filtered.length} entr{filtered.length===1?'y':'ies'}</small></td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>{byCategory.length} categor{byCategory.length===1?'y':'ies'}</td>
+            <td style={{color:'#6b7d76'}}>—</td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>
+              {paymentMethods.filter(pm=>filtered.some(e=>e.payment===pm.id)).map(pm=>`${pm.label} ${format(filtered.filter(e=>e.payment===pm.id).reduce((s,e)=>s+Number(e.amount||0),0))}`).join(' · ')||'—'}
+            </td>
+            <td style={{fontSize:'10px',color:'#6b7d76'}}>{new Set(filtered.map(e=>e.by)).size} staff</td>
+            <td><b style={{color:'#991b1b'}}>{format(total)}</b></td>
+            <td></td>
+          </tr></tfoot>}
+          </table></div>
           {filtered.length===0 && <div className="empty-state"><Coins size={20}/><b>No expenses found</b><small>Try different filters or record a new expense</small></div>}
         </div>
 
@@ -2068,6 +2151,7 @@ function InvoiceModal({sale,shop=SHOP,receiptFooter='',onClose,onPrintReceipt}){
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',margin:'14px 0',padding:'10px',background:'#f9fbf9',border:'1px solid #e7ece8',borderRadius:'8px',fontSize:'11px'}}><div><small style={{color:'#6b7d76',fontWeight:700}}>BILL TO</small><b style={{display:'block'}}>{sale.customerName}</b></div><div><small style={{color:'#6b7d76',fontWeight:700}}>SELLER NAME</small><b style={{display:'block'}}>{sale.cashier}</b></div><div><small style={{color:'#6b7d76',fontWeight:700}}>PAYMENT</small><b style={{display:'block'}}>{sale.payment} {sale.paymentDetail?.phone||sale.paymentDetail?.code||''}</b></div></div>
           <div className="invoice-line head"><span>PRODUCT</span><span>QTY</span><span>UNIT</span><span>TOTAL</span></div>
           {sale.items?.map((it,i)=><div key={i} className="invoice-line"><span>{it.name}</span><span>{it.qty}</span><span>{format(it.unitPrice)}</span><span>{format(it.lineTotal)}</span></div>)}
+          {(sale.items?.length||0)>0 && <div className="invoice-line" style={{borderTop:'1px solid #e7ece8',background:'#f9fbf9',fontWeight:800}}><span>Totals</span><span>{sale.items.reduce((s,it)=>s+Number(it.qty||0),0)}</span><span style={{color:'#6b7d76'}}>—</span><span>{format(sale.items.reduce((s,it)=>s+Number(it.lineTotal||0),0))}</span></div>}
           <div className="invoice-tot"><div><span>Subtotal</span><b>{format(subtotal)}</b></div>{sale.discount>0 && <div><span>Discount</span><b>-{format(sale.discount)}</b></div>}<div className="grand"><span>Total paid</span><b>{format(sale.total)}</b></div></div>
         </div>
         <div style={{padding:'12px 20px',borderTop:'1px solid #e7ece8',background:'#fcfdfc',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:'11px',color:'#6b7d76',display:'flex',alignItems:'center',gap:'5px'}}><ShieldCheck size={12}/> {receiptFooter || `Thank you for shopping with ${shop.name}!`}</span><div style={{display:'flex',gap:'6px'}}><button className="btn small no-print" onClick={()=>onPrintReceipt(sale)}><Printer size={14}/> Print receipt</button><button className="btn small primary no-print" onClick={()=>window.print()}><Printer size={14}/> Print invoice</button></div></div>
