@@ -64,6 +64,18 @@ const daysToExpiry = (p) => {
   if(Number.isNaN(d.getTime())) return null;
   return Math.round((d - new Date(`${todayKey()}T12:00:00`))/86400000);
 };
+// Sales maths: units bought, cost of goods and profit per sale. Item cost is
+// stored on the sale line when available, otherwise looked up from the product.
+const saleUnits = (sale) => (sale?.items||[]).reduce((s,it)=>s+Number(it.qty||0),0);
+const itemCostOf = (it, products) => {
+  const stored = it?.cost ?? it?.unitCost;
+  if(stored!==undefined && stored!==null && stored!=='') return Number(stored)||0;
+  const prod = (products||[]).find(p=>p.id===it?.productId);
+  return Number(prod?.cost||0);
+};
+const saleCost = (sale, products) => (sale?.items||[]).reduce((s,it)=>s+itemCostOf(it,products)*Number(it.qty||0),0);
+const saleProfit = (sale, products) => (sale?.items||[]).reduce((s,it)=>s+(Number(it.unitPrice||0)-itemCostOf(it,products))*Number(it.qty||0),0);
+
 // 'expired' | 'soon' | 'ok' | 'none' — drives badges, filters and alerts.
 const expiryOf = (p) => {
   const days = daysToExpiry(p);
@@ -581,7 +593,7 @@ function App({offline}){
       cashierId: currentUser?.id || cashierId,
       customerId: selectedCustomer.id,
       customerName: selectedCustomer.name,
-      items: cart.map(i=>({productId:i.id,name:i.name,qty:i.qty,unitPrice:i.price,lineTotal:i.price*i.qty})),
+      items: cart.map(i=>({productId:i.id,name:i.name,qty:i.qty,unitPrice:i.price,cost:Number(i.cost||0),lineTotal:i.price*i.qty})),
       subtotal: Number(subtotal.toFixed(2)),
       discount: Number(discount.toFixed(2)),
       tax:0,
@@ -760,12 +772,12 @@ function App({offline}){
             onAddProduct={()=>{setEditingProduct(null);setShowProductModal(true)}}
           />}
           {view==='inventory' && <InventoryPage products={products} setProducts={setProducts} search={search} setSearch={setSearch} cat={cat} setCat={setCat} categories={categories} isOwner={isOwner} stockMoves={stockMoves} onEdit={(p)=>{setEditingProduct(p);setShowProductModal(true)}} onDelete={deleteProduct} onAdd={()=>{setEditingProduct(null);setShowProductModal(true)}} onStock={(p,mode)=>setStockModal({product:p,mode})} />}
-          {view==='customers' && <CustomersPage customers={customers} sales={sales} isOwner={isOwner} onEdit={(c)=>{setEditingCustomer(c);setShowCustomerModal(true)}} onAdd={()=>{setEditingCustomer(null);setShowCustomerModal(true)}} onPayAccount={payAccount} />}
+          {view==='customers' && <CustomersPage customers={customers} sales={sales} products={products} isOwner={isOwner} onEdit={(c)=>{setEditingCustomer(c);setShowCustomerModal(true)}} onAdd={()=>{setEditingCustomer(null);setShowCustomerModal(true)}} onPayAccount={payAccount} />}
           {view==='leads' && isOwner && <LeadsPage customers={customers} sales={sales} products={products} onStartSale={(customer)=>{setSelectedCustomerId(customer.id);setView('pos')}} />}
           {view==='maintenance' && isOwner && <MaintenancePage records={maintenance} onSave={saveMaintenance} onComplete={completeMaintenance} onDelete={deleteMaintenance} />}
           {view==='timeline' && isOwner && <TimelinePage activities={activities} sales={sales} stockMoves={stockMoves} expenses={expenses} maintenance={maintenance} messages={messages} />}
           {view==='settings' && isOwner && <SettingsPage settings={settings} onSave={saveSettings} onExportBackup={exportShopData} onChangePassword={()=>setShowMyPassword(true)} offlineStatus={offline.status} counts={{Products:products.length,Sales:sales.length,Customers:customers.filter(c=>!c.isWalkIn).length,Staff:employees.length,Expenses:expenses.length,Maintenance:maintenance.length}} />}
-          {view==='invoices' && <InvoicesPage sales={visibleSales} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} employees={employees} />}
+          {view==='invoices' && <InvoicesPage sales={visibleSales} products={products} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={setSelectedInvoice} onViewReceipt={setSelectedReceipt} employees={employees} />}
           {view==='expenses' && isOwner && <ExpensesPage expenses={expenses} onEdit={(e)=>{setEditingExpense(e);setShowExpenseModal(true)}} onAdd={()=>{setEditingExpense(null);setShowExpenseModal(true)}} onDelete={deleteExpense} />}
           {view==='gift' && isOwner && <GiftAccountPage giftCards={giftCards} customers={customers} sales={sales} onAdd={()=>setShowGiftModal(true)} onPayAccount={payAccount} />}
           {view==='staff' && isOwner && <StaffPage employees={employees} sales={sales} attendance={attendance} currentUser={currentUser} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} onViewSales={setStaffSales} onCredentials={setCredentialsFor} />}
@@ -798,7 +810,7 @@ function App({offline}){
       {showMessageModal && <MessageModal employees={employees} currentUser={currentUser} onClose={()=>setShowMessageModal(false)} onSend={sendMessage} />}
       {showExpenseModal && <ExpenseModal expense={editingExpense} onClose={()=>{setShowExpenseModal(false);setEditingExpense(null)}} onSave={saveExpense} employees={employees} />}
       {stockModal && <StockModal stock={stockModal} onClose={()=>setStockModal(null)} onSave={applyStockChange} />}
-      {staffSales && isOwner && <StaffSalesModal employee={staffSales} sales={sales} onClose={()=>setStaffSales(null)} onViewInvoice={(s)=>{setStaffSales(null);setSelectedInvoice(s)}} onViewReceipt={(s)=>{setStaffSales(null);setSelectedReceipt(s)}} />}
+      {staffSales && isOwner && <StaffSalesModal employee={staffSales} sales={sales} products={products} onClose={()=>setStaffSales(null)} onViewInvoice={(s)=>{setStaffSales(null);setSelectedInvoice(s)}} onViewReceipt={(s)=>{setStaffSales(null);setSelectedReceipt(s)}} />}
       {showPay && <PaymentModal cart={cart} subtotal={subtotal} discount={discount} total={total} customer={selectedCustomer} giftCards={giftCards} onClose={()=>setShowPay(false)} onComplete={completeSale} isOwner={isOwner} />}
       {selectedInvoice && <InvoiceModal sale={selectedInvoice} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} />}
       {selectedReceipt && <ReceiptModal sale={selectedReceipt} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedReceipt(null)} />}
@@ -894,6 +906,9 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
     total: sales.filter(s=>s.payment===pm.id).reduce((s,x)=>s+Number(x.total||0),0),
     count: sales.filter(s=>s.payment===pm.id).length
   }));
+  const allUnitsBought = sales.reduce((sum,x)=>sum+saleUnits(x),0);
+  const allProfit = sales.reduce((sum,x)=>sum+saleProfit(x,products),0);
+  const allProfitMargin = (()=>{ const rev = sales.reduce((sum,x)=>sum+Number(x.total||0),0); return rev? allProfit/rev*100 : 0 })();
   const topProducts = (()=>{ const m=new Map(); sales.forEach(s=>s.items?.forEach(it=>{ const cur=m.get(it.name)||{name:it.name,qty:0,rev:0}; cur.qty+=it.qty; cur.rev+=it.lineTotal; m.set(it.name,cur)})); return [...m.values()].sort((a,b)=>b.qty-a.qty).slice(0,5) })();
 
   const combinedTotal = sales.reduce((s,x)=>s+Number(x.total||0),0);
@@ -913,6 +928,7 @@ function DashboardOwner({sales,todaySales,products,customers,employees,activitie
       <div className="grid metrics" style={{marginBottom:'14px'}}>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><Wallet size={16}/></div><span style={{fontSize:'10px',fontWeight:800,color:'#065f46',background:'#ecfdf5',padding:'3px 7px',borderRadius:'20px'}}>TODAY</span></div><div className="metric-label">Sales today (combined)</div><div className="metric-value">{format(totalToday)}</div><div className="metric-note">{dailyChange!==null&&<em>{dailyChange>=0?<TrendingUp size={12}/>:<TrendingDown size={12}/>} {dailyChange>=0?'+':''}{dailyChange.toFixed(0)}%</em>} {todaySales.length} transactions from all cashiers</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><DollarSign size={16}/></div></div><div className="metric-label">Total combined revenue</div><div className="metric-value">{format(combinedTotal)}</div><div className="metric-note">All payment methods combined to owner</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><PiggyBank size={16}/></div></div><div className="metric-label">Profit on all sales</div><div className="metric-value" style={{color:allProfit>=0?'#065f46':'#991b1b'}}>{format(allProfit)}</div><div className="metric-note"><b>{allUnitsBought.toLocaleString()}</b> products bought · {allProfitMargin.toFixed(0)}% margin</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><PiggyBank size={16}/></div></div><div className="metric-label">Money owed by customers</div><div className="metric-value">{format(accountReceivable)}</div><div className="metric-note">{customers.filter(c=>c.balance>0).length} customers owe</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon violet"><Gift size={16}/></div></div><div className="metric-label">Gift card liability</div><div className="metric-value">{format(giftLiability)}</div><div className="metric-note">{giftCards.filter(g=>g.status==='active').length} active cards</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon blue"><Package size={16}/></div></div><div className="metric-label">Low stock alerts</div><div className="metric-value">{lowStock.length}</div><div className="metric-note">{lowStock.length? <button className="link-btn" onClick={()=>setView('inventory')}>Needs restock — view items</button> : 'All stocked'}</div></div>
@@ -1253,7 +1269,7 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
   );
 }
 
-function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
+function CustomersPage({customers,sales,products=[],isOwner,onEdit,onAdd,onPayAccount}){
   const [q,setQ]=useState('');
   const [payModal,setPayModal]=useState(null);
   const [payAmount,setPayAmount]=useState('');
@@ -1262,7 +1278,15 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
     return `${c.name} ${c.phone} ${c.email}`.toLowerCase().includes(q.toLowerCase());
   });
   const totalReceivable = filtered.reduce((s,c)=>s+Number(c.balance||0),0);
-  const totals = filtered.reduce((t,c)=>{ t.balance+=Number(c.balance||0); t.spent+=Number(c.totalSpent||0); t.visits+=Number(c.visits||0); if(Number(c.balance||0)>0) t.owing+=1; return t; },{balance:0,spent:0,visits:0,owing:0});
+  const totals = filtered.reduce((t,c)=>{
+    t.balance += Number(c.balance||0);
+    t.spent += Number(c.totalSpent||0);
+    t.visits += Number(c.visits||0);
+    if(Number(c.balance||0)>0) t.owing += 1;
+    t.units += sales.filter(s=>s.customerId===c.id).reduce((a,s)=>a+saleUnits(s),0);
+    t.profit += sales.filter(s=>s.customerId===c.id).reduce((a,s)=>a+saleProfit(s,products),0);
+    return t;
+  },{balance:0,spent:0,visits:0,owing:0,units:0,profit:0});
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><Users size={12}/> CUSTOMER LIST</div><h1>Customer list</h1></div><button className="btn primary" onClick={onAdd}><UserPlus size={16}/> Add customer</button></div>
@@ -1276,7 +1300,7 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
           })}
         </tbody>
         {filtered.length>0 && <tfoot><tr>
-          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{filtered.length} customer{filtered.length===1?'':'s'} · {totals.owing} owing</small></td>
+          <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{filtered.length} customer{filtered.length===1?'':'s'} · {totals.owing} owing · {totals.units.toLocaleString()} products bought</small></td>
           <td style={{color:'#6b7d76'}}>—</td>
           <td><b style={{color:totals.balance>0?'#991b1b':'#065f46'}}>{format(totals.balance)}</b></td>
           <td><b>{format(totals.spent)}</b></td>
@@ -1301,12 +1325,19 @@ function CustomersPage({customers,sales,isOwner,onEdit,onAdd,onPayAccount}){
   );
 }
 
-function InvoicesPage({sales,isOwner,filter,setFilter,onViewInvoice,onViewReceipt,employees}){
+function InvoicesPage({sales,products=[],isOwner,filter,setFilter,onViewInvoice,onViewReceipt,employees}){
   const total = sales.reduce((s,x)=>s+Number(x.total||0),0);
-  const totals = sales.reduce((t,x)=>{ t.items+=Number(x.itemCount||0); t.total+=Number(x.total||0); return t; },{items:0,total:0});
+  const totals = sales.reduce((t,x)=>{
+    t.items += saleUnits(x);
+    t.total += Number(x.total||0);
+    t.cost += saleCost(x,products);
+    t.profit += saleProfit(x,products);
+    return t;
+  },{items:0,total:0,cost:0,profit:0});
+  const totalMargin = totals.total ? (totals.profit/totals.total*100) : 0;
   return (
     <div>
-      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history':'My sales history — today'}</h1></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Items','Payment','Total']; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,s.itemCount,s.payment,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
+      <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> SALES HISTORY</div><h1>{isOwner?'Sales history':'My sales history — today'}</h1></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span><span className="kpi"><Package size={14}/> <b>{totals.items.toLocaleString()}</b> products bought</span>{isOwner && <span className="kpi" style={{background:'#ecfdf5'}}><PiggyBank size={14}/> <b>{format(totals.profit)}</b> profit</span>}<button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Units bought','Payment','Total',...(isOwner?['Profit']:[])]; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,saleUnits(s),s.payment,s.total,...(isOwner?[saleProfit(s,products).toFixed(2)]:[])]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
 
       <div className="card">
         <div className="toolbar">
@@ -1315,14 +1346,15 @@ function InvoicesPage({sales,isOwner,filter,setFilter,onViewInvoice,onViewReceip
           <select value={filter.payment} onChange={e=>setFilter(f=>({...f,payment:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option>All</option><option>Cash</option><option>MoMo</option><option>Gift</option></select>
           {isOwner && <select value={filter.date} onChange={e=>setFilter(f=>({...f,date:e.target.value}))} style={{minHeight:'42px',border:'1px solid #e7ece8',borderRadius:'10px',padding:'0 10px'}}><option value="All">All dates</option><option value="Today">Today</option><option value="Week">Last 7 days</option><option value="Month">This month</option></select>}
         </div>
-        <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>SELLER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th><th>STATUS</th><th></th></tr></thead><tbody>
-          {sales.map(s=><tr key={s.id}><td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.id}</small></td><td><b>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td><td>{s.customerName}</td><td>{s.cashier}</td><td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td><td>{s.itemCount}</td><td><b>{format(s.total)}</b></td><td><span className="status ok"><i/>Paid</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td></tr>)}
+        <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>SELLER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th>{isOwner&&<th>PROFIT</th>}<th>STATUS</th><th></th></tr></thead><tbody>
+          {sales.map(s=>{ const profit = saleProfit(s,products); return <tr key={s.id}><td><b style={{color:'#0f766e',fontSize:'12px'}}>{s.invoiceNumber}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.id}</small></td><td><b>{s.date===todayKey()?'Today':readableDate(s.date)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{s.time}</small></td><td>{s.customerName}</td><td>{s.cashier}</td><td><span className={`badge-pay ${s.payment.toLowerCase()}`}>{s.payment}</span></td><td><b>{saleUnits(s)}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>bought</small></td><td><b>{format(s.total)}</b></td>{isOwner&&<td><b style={{color:profit>0?'#065f46':profit<0?'#991b1b':'#6b7d76'}}>{format(profit)}</b></td>}<td><span className="status ok"><i/>Paid</span></td><td><div style={{display:'flex',gap:'4px'}}><button className="btn small" onClick={()=>onViewInvoice(s)}><Eye size={12}/> View</button><button className="btn small primary" onClick={()=>onViewReceipt(s)}><Printer size={12}/> Print receipt</button></div></td></tr>})}
         </tbody>
         {sales.length>0 && <tfoot><tr>
           <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{sales.length} invoice{sales.length===1?'':'s'}</small></td>
           <td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td>
-          <td><b>{totals.items.toLocaleString()}</b> items</td>
+          <td><b>{totals.items.toLocaleString()}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>bought</small></td>
           <td><b>{format(totals.total)}</b></td>
+          {isOwner&&<td><b style={{color:totals.profit>0?'#065f46':'#991b1b'}}>{format(totals.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{totalMargin.toFixed(0)}% · cost {format(totals.cost)}</small></td>}
           <td style={{fontSize:'10px',color:'#6b7d76'}}>all paid</td><td></td>
         </tr></tfoot>}
         </table></div>
@@ -1506,6 +1538,7 @@ function ReportsPage({sales,products,customers,giftCards,expenses}){
   const cogs = filtered.reduce((sum,s)=>{
     let c=0; s.items?.forEach(it=>{ const prod=products.find(pr=>pr.id===it.productId); c+=(prod?.cost||0)*it.qty }); return sum+c;
   },0);
+  const unitsBought = filtered.reduce((sum,x)=>sum+saleUnits(x),0);
   const grossProfit = total - cogs;
   const netProfit = grossProfit - expenseTotal;
   const byPayment = paymentMethods.map(pm=>({method:pm.id,total:filtered.filter(s=>s.payment===pm.id).reduce((s,x)=>s+Number(x.total||0),0),count:filtered.filter(s=>s.payment===pm.id).length}));
@@ -1536,8 +1569,12 @@ function ReportsPage({sales,products,customers,giftCards,expenses}){
       ['Expenses by category','Amount (GH\u20b5)','Entries'],
       ...byCategory.map(c=>[c.cat,c.total.toFixed(2),c.count]),
       [],
-      ['Invoice','Date','Cashier','Payment','Total'],
-      ...filtered.map(s=>[s.invoiceNumber,s.date,s.cashier,s.payment,Number(s.total).toFixed(2)]),
+      ['Invoice','Date','Cashier','Payment','Units bought','Cost of goods','Profit','Total'],
+      ...filtered.map(s=>{
+        const c = saleCost(s, products);
+        return [s.invoiceNumber,s.date,s.cashier,s.payment,saleUnits(s),c.toFixed(2),(Number(s.total||0)-c).toFixed(2),Number(s.total).toFixed(2)];
+      }),
+      ['TOTAL','','','',unitsBought,cogs.toFixed(2),grossProfit.toFixed(2),total.toFixed(2)],
       [],
       ['Expense','Date','Category','Note','Amount'],
       ...filteredExp.map(e=>[e.id,e.date,e.category,e.note,Number(e.amount).toFixed(2)]),
@@ -1552,8 +1589,8 @@ function ReportsPage({sales,products,customers,giftCards,expenses}){
       <div className="page-head"><div><div className="eyebrow"><BarChart3 size={12}/> BUSINESS REPORT</div><h1>Business report — revenue, expenses & profit</h1><p>Revenue, cost of goods, expenses and net profit with payment and category breakdowns. All cashier accounts combined.</p></div><div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>{['today','week','month','all'].map(r=><button key={r} className={`btn small ${range===r?'primary':'ghost'}`} onClick={()=>setRange(r)}>{r.toUpperCase()}</button>)}<button className="btn small" onClick={exportReport}><Download size={12}/> Export CSV</button></div></div>
 
       <div className="grid metrics" style={{marginBottom:'14px'}}>
-        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><DollarSign size={16}/></div></div><div className="metric-label">Revenue ({range})</div><div className="metric-value">{format(total)}</div><div className="metric-note">{filtered.length} invoices</div></div>
-        <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><TrendingUp size={16}/></div></div><div className="metric-label">Gross profit (after COGS)</div><div className="metric-value">{format(grossProfit)}</div><div className="metric-note">{total?`${(grossProfit/total*100).toFixed(1)}% margin · COGS ${format(cogs)}`:`COGS ${format(cogs)}`}</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon green"><DollarSign size={16}/></div></div><div className="metric-label">Revenue ({range})</div><div className="metric-value">{format(total)}</div><div className="metric-note">{filtered.length} invoices · <b>{unitsBought.toLocaleString()}</b> products bought</div></div>
+        <div className="card metric-card"><div className="metric-top"><div className="metric-icon dark"><TrendingUp size={16}/></div></div><div className="metric-label">Gross profit (after COGS)</div><div className="metric-value">{format(grossProfit)}</div><div className="metric-note">{total?`${(grossProfit/total*100).toFixed(1)}% margin · COGS ${format(cogs)}`:`COGS ${format(cogs)}`} · summed over {filtered.length} invoices</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><Coins size={16}/></div></div><div className="metric-label">Expenses ({range})</div><div className="metric-value">{format(expenseTotal)}</div><div className="metric-note"><button className="link-btn" onClick={()=>document.getElementById('exp-breakdown')?.scrollIntoView({behavior:'smooth'})}>{filteredExp.length} entries · {byCategory.length} categories</button></div></div>
         <div className="card metric-card"><div className="metric-top"><div className={`metric-icon ${netProfit>=0?'green':'blue'}`}><TrendingDown size={16}/></div></div><div className="metric-label">Net profit (after expenses)</div><div className="metric-value" style={{color:netProfit>=0?'#065f46':'#991b1b'}}>{format(netProfit)}</div><div className="metric-note">{netProfit>=0?'Profitable in this period':'Running a loss in this period'}</div></div>
         <div className="card metric-card"><div className="metric-top"><div className="metric-icon amber"><Wallet size={16}/></div></div><div className="metric-label">Money owed by customers</div><div className="metric-value">{format(receivable)}</div><div className="metric-note">Owed to owner</div></div>
@@ -1663,10 +1700,11 @@ function MessagesPage({messages,employees,currentUser,isOwner,onSend,onMarkRead}
   );
 }
 
-function StaffSalesModal({employee,sales,onClose,onViewInvoice,onViewReceipt}){
+function StaffSalesModal({employee,sales,products=[],onClose,onViewInvoice,onViewReceipt}){
   const empSales = sales.filter(s=>s.cashierId===employee.id || s.cashier===employee.name);
   const total = empSales.reduce((s,x)=>s+Number(x.total||0),0);
-  const items = empSales.reduce((s,x)=>s+Number(x.itemCount||0),0);
+  const items = empSales.reduce((s,x)=>s+saleUnits(x),0);
+  const profit = empSales.reduce((s,x)=>s+saleProfit(x,products),0);
   return (
     <div className="backdrop" onMouseDown={e=>{if(e.target===e.currentTarget) onClose()}}>
       <div className="modal wide"><div className="modal-head"><div style={{width:'36px',height:'36px',borderRadius:'9px',background:'#dbeafe',color:'#1e40af',display:'grid',placeItems:'center'}}><FileText size={18}/></div><div><h3>{employee.name} — sales history</h3><p>Every sale recorded by this employee · combined to owner</p></div><button className="btn icon small" style={{marginLeft:'auto'}} onClick={onClose}><X size={14}/></button></div>
@@ -1674,7 +1712,8 @@ function StaffSalesModal({employee,sales,onClose,onViewInvoice,onViewReceipt}){
           <div className="kpi-row">
             <span className="kpi"><FileText size={14}/> <b>{empSales.length}</b> invoices</span>
             <span className="kpi"><Wallet size={14}/> <b>{format(total)}</b> total</span>
-            <span className="kpi"><Package size={14}/> <b>{items}</b> items sold</span>
+            <span className="kpi"><Package size={14}/> <b>{items}</b> products bought</span>
+            <span className="kpi" style={{background:'#ecfdf5'}}><PiggyBank size={14}/> <b>{format(profit)}</b> profit</span>
             <button className="btn small" style={{marginLeft:'auto'}} onClick={()=>{ const header=['Invoice','Date','Time','Customer','Payment','Items','Total']; const rows=empSales.map(s=>[s.invoiceNumber,s.date,s.time,s.customerName,s.payment,s.itemCount,s.total]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${employee.name.replaceAll(' ','-')}-${todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={12}/> Export CSV</button>
           </div>
           <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>CUSTOMER</th><th>PAYMENT</th><th>ITEMS</th><th>TOTAL</th><th></th></tr></thead><tbody>
@@ -1693,7 +1732,7 @@ function StaffSalesModal({employee,sales,onClose,onViewInvoice,onViewReceipt}){
           {empSales.length>0 && <tfoot><tr>
             <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{empSales.length} invoice{empSales.length===1?'':'s'}</small></td>
             <td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td><td style={{color:'#6b7d76'}}>—</td>
-            <td><b>{items.toLocaleString()}</b> items</td>
+            <td><b>{items.toLocaleString()}</b> bought</td>
             <td><b>{format(total)}</b></td><td></td>
           </tr></tfoot>}
           </table></div>
