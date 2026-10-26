@@ -1075,6 +1075,22 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
   const low = products.filter(p=>p.stock<=reorderOf(p)).length;
   const out = products.filter(p=>p.stock===0).length;
   const stockValue = products.reduce((s,p)=>s+Number(p.cost||0)*Number(p.stock||0),0);
+  const totals = filtered.reduce((t,p)=>{
+    const cost = Number(p.cost||0), price = Number(p.price||0), qty = Number(p.stock||0);
+    t.stock += qty;
+    t.reorder += reorderOf(p);
+    t.cost += cost;
+    t.price += price;
+    t.profit += price - cost;
+    t.costValue += cost * qty;
+    t.priceValue += price * qty;
+    if(qty===0) t.out += 1;
+    else if(qty<=reorderOf(p)) t.low += 1;
+    else t.inStock += 1;
+    return t;
+  },{stock:0,reorder:0,cost:0,price:0,profit:0,costValue:0,priceValue:0,low:0,out:0,inStock:0});
+  const totalMargin = totals.price ? (totals.profit/totals.price*100) : 0;
+  const totalCats = new Set(filtered.map(p=>p.category)).size;
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><Package size={12}/> {isOwner?'STOCK & ITEM LIST':'ITEM LIST'}</div><h1>{isOwner?'Stock management & item records':'Item list'}</h1>{!isOwner && <p>Browse products, prices and availability. Cost, profit and reorder tracking are managed by the owner.</p>}</div>{isOwner && <button className="btn primary" onClick={onAdd}><Plus size={16}/> Add item</button>}</div>
@@ -1112,7 +1128,22 @@ function InventoryPage({products,search,setSearch,cat,setCat,categories,isOwner,
               </div></td>}
             </tr>
           })}
-        </tbody></table></div>
+        </tbody>
+        {filtered.length>0 && <tfoot>
+          <tr>
+            <td><b>Totals</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{filtered.length} item{filtered.length===1?'':'s'}{filtered.length!==products.length?` of ${products.length}`:''}</small></td>
+            <td style={{color:'#6b7d76'}}>—</td>
+            <td><b>{totalCats}</b> <small style={{fontSize:'10px',color:'#6b7d76'}}>categor{totalCats===1?'y':'ies'}</small></td>
+            <td><b>{totals.stock.toLocaleString()}</b> units</td>
+            {isOwner&&<td><b>{totals.reorder.toLocaleString()}</b> units</td>}
+            {isOwner&&<td><b>{format(totals.cost)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>stock value {format(totals.costValue)}</small></td>}
+            <td><b>{format(totals.price)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>retail value {format(totals.priceValue)}</small></td>
+            {isOwner&&<td><b style={{color:totals.profit>0?'#065f46':'#991b1b'}}>{format(totals.profit)}</b><small style={{display:'block',fontSize:'10px',color:'#6b7d76'}}>{totalMargin.toFixed(0)}% · on hand {format(totals.priceValue-totals.costValue)}</small></td>}
+            <td><span style={{fontSize:'10px',fontWeight:700,color:'#065f46'}}>{totals.inStock} in</span> <span style={{fontSize:'10px',fontWeight:700,color:'#92400e'}}>· {totals.low} low</span> <span style={{fontSize:'10px',fontWeight:700,color:'#991b1b'}}>· {totals.out} out</span></td>
+            {isOwner&&<td></td>}
+          </tr>
+        </tfoot>}
+        </table></div>
         {filtered.length===0 && <div className="empty-state"><b>No items</b><small>Try different filter</small></div>}
         <div style={{display:'flex',justifyContent:'space-between',padding:'10px 2px 2px',fontSize:'11px',color:'#6b7d76'}}><span>Showing {filtered.length} of {products.length}</span><span>{isOwner?'Owner controls inventory':'Owner controls product records'}</span></div>
       </div>

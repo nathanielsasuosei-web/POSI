@@ -137,6 +137,8 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 thead th{padding:10px 10px;background:#f9fbf9;border-bottom:1px solid var(--line);color:#6b7d76;font-size:10px;font-weight:800;letter-spacing:.7px;text-align:left;white-space:nowrap}
 tbody td{padding:11px 10px;border-bottom:1px solid #f0f3f0;color:#3a4f49;white-space:nowrap}
 tbody tr:last-child td{border-bottom:0}
+tfoot td{padding:10px;background:#f9fbf9;border-top:1px solid var(--line);color:#233a33;white-space:nowrap}
+tfoot tr:first-child td{border-top:2px solid #dfe7e2}
 .status{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
 .status i{width:6px;height:6px;border-radius:50%;background:currentColor}
 .status.ok{background:#ecfdf5;color:#065f46}
