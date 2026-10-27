@@ -169,7 +169,7 @@ function usePersistent(key, initial){
   return [val,setVal];
 }
 
-function App({offline,setup}){
+function App({offline,setup,onRestart}){
   const [products,setProducts]=usePersistent(K.products, []);
   const [sales,setSales]=usePersistent(K.sales, []);
   const [customers,setCustomers]=usePersistent(K.customers, walkInCustomers);
@@ -820,7 +820,7 @@ function App({offline,setup}){
   ];
   const nav = isOwner?navOwner:navCashier;
 
-  if(!currentUser) return <LoginScreen onSignIn={signIn} shop={shop} />;
+  if(!currentUser) return <LoginScreen onSignIn={signIn} shop={shop} onRestart={onRestart} />;
 
   return (
     <div className="app-shell">
@@ -961,7 +961,7 @@ function App({offline,setup}){
 
 // Components
 
-function LoginScreen({onSignIn,shop=SHOP}){
+function LoginScreen({onSignIn,shop=SHOP,onRestart}){
   const [username,setUsername]=useState('');
   const [password,setPassword]=useState('');
   const [showPassword,setShowPassword]=useState(false);
@@ -1013,10 +1013,10 @@ function LoginScreen({onSignIn,shop=SHOP}){
           <button className="btn primary" style={{width:'100%',marginTop:'16px',justifyContent:'space-between'}} disabled={busy}>
             <span>{busy?'Signing in…':'Sign in'}</span><ArrowRight size={18}/>
           </button>
+          <button type="button" className="btn" style={{width:'100%',marginTop:'12px'}} onClick={onRestart}>Start fresh · create my owner account</button>
+          <p style={{fontSize:'11px',color:'#6b7d76'}}>Starting fresh deletes this device’s current shop records and opens store setup. You will be asked to confirm.</p>
 
-          <div style={{marginTop:'14px',padding:'10px',borderRadius:'8px',background:'#f6fbf8',display:'flex',gap:'8px',fontSize:'11px',color:'#4a635c',lineHeight:1.5}}>
-            <ShieldCheck size={14} style={{flex:'none'}}/><span><b>Owner-created accounts only.</b> Forgotten password? The owner can reset it in <b>Staff Tracking → Login</b>.<br/>First sign-in on a fresh install — owner: <b>owner / owner123</b>, Ama Boateng: <b>ama / ama123</b>, Kwame Owusu: <b>kwame / kwame123</b>. Change these after signing in.</span>
-          </div>
+
         </form>
       </div>
     </div>
@@ -2849,7 +2849,18 @@ function Root(){
   const [setup,setSetup] = useState(()=>{
     try{ return JSON.parse(localStorage.getItem(SETUP_KEY)) || null }catch{ return null }
   });
-  return <>{setup ? <App offline={offline} setup={setup}/> : <SetupScreen onComplete={setSetup}/>}<OfflineBanner {...offline}/></>;
+  const restart = ()=>{
+    if(!window.confirm('Start a completely new store? This permanently deletes this browser’s current shop accounts, inventory, sales and other shop records. Export a backup in Settings first if needed. This cannot be undone.')) return;
+    try{
+      // Remove the setup marker last; keep unrelated browser and legacy demo data untouched.
+      Object.values(K).forEach(key=>localStorage.removeItem(key));
+      localStorage.removeItem('posi-live-v1-assistant');
+      sessionStorage.removeItem('posi-live-user-id');
+      localStorage.removeItem(SETUP_KEY);
+      setSetup(null);
+    }catch{ window.alert('Could not reset browser storage. Please allow storage access and try again.'); }
+  };
+  return <>{setup ? <App offline={offline} setup={setup} onRestart={restart}/> : <SetupScreen onComplete={setSetup}/>}<OfflineBanner {...offline}/></>;
 }
 
 createRoot(document.getElementById('root')).render(<Root/>);
