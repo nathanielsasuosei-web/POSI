@@ -34,39 +34,17 @@ const downloadCsv = (name, rows) => {
 };
 
 export const DEFAULT_SETTINGS = {
-  shopName: 'Green Cross Drug Store',
-  address: '12 Oxford Street, Osu, Accra',
-  phone: '030 274 1122',
-  email: 'hello@greencross.example',
+  shopName: 'Your store',
+  address: '',
+  phone: '',
+  email: '',
   invoicePrefix: 'INV',
-  discountPercent: 10,
+  discountPercent: 0,
   defaultLowStock: 5,
   receiptFooter: 'Thank you for shopping with us. Please keep your receipt.',
 };
 
-export const DEFAULT_MAINTENANCE = [
-  {
-    id: 'mnt1', title: 'Temperature control service', asset: 'Pharmaceutical refrigerator',
-    category: 'Refrigeration', dueDate: addDays(2), frequency: 90, vendor: 'CoolCare Ghana',
-    cost: 450, status: 'scheduled', notes: 'Check thermostat, seals and temperature log.', lastCompleted: daysAgo(88),
-  },
-  {
-    id: 'mnt2', title: 'Printer and scanner inspection', asset: 'POS counter equipment',
-    category: 'POS equipment', dueDate: daysAgo(1), frequency: 30, vendor: 'In-house',
-    cost: 0, status: 'scheduled', notes: 'Clean print head, test scanner and check cables.', lastCompleted: daysAgo(31),
-  },
-  {
-    id: 'mnt3', title: 'Filter cleaning and airflow check', asset: 'Main shop air conditioner',
-    category: 'Facilities', dueDate: addDays(12), frequency: 90, vendor: 'AirPro Services',
-    cost: 280, status: 'scheduled', notes: 'Clean filters and confirm drainage is clear.', lastCompleted: daysAgo(78),
-  },
-  {
-    id: 'mnt4', title: 'Battery and backup power test', asset: 'Inverter and backup battery',
-    category: 'Power', dueDate: daysAgo(6), frequency: 180, vendor: 'Volta Electricals',
-    cost: 200, actualCost: 180, status: 'completed', completedDate: daysAgo(6),
-    notes: 'Run load test and inspect battery terminals.', completionNotes: 'Load test passed; terminals cleaned.',
-  },
-];
+export const DEFAULT_MAINTENANCE = [];
 
 const eventTypeMeta = {
   sale: { label: 'Sale', icon: ShoppingCart },

@@ -1137,7 +1137,7 @@ function AnswerCard({ answer, onAsk }){
 }
 
 export function AIAssistantPage({ data, shop=null, currentUser=null }){
-  const [messages,setMessages] = useStored('posi-v3-assistant', []);
+  const [messages,setMessages] = useStored('posi-live-v1-assistant', []);
   const [input,setInput] = useState('');
   const [thinking,setThinking] = useState(false);
   const threadRef = useRef(null);
