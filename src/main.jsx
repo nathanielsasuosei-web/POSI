@@ -18,18 +18,18 @@ import { AIAssistantPage } from './assistant.jsx';
 
 // Storage keys
 const K = {
-  products: 'posi-v3-products',
-  sales: 'posi-v3-sales',
-  customers: 'posi-v3-customers',
-  employees: 'posi-v3-employees',
-  giftCards: 'posi-v3-giftcards',
-  messages: 'posi-v3-messages',
-  activities: 'posi-v3-activities',
-  attendance: 'posi-v3-attendance',
-  expenses: 'posi-v3-expenses',
-  stockMoves: 'posi-v3-stockmoves',
-  settings: 'posi-v3-settings',
-  maintenance: 'posi-v3-maintenance',
+  products: 'posi-live-v1-products',
+  sales: 'posi-live-v1-sales',
+  customers: 'posi-live-v1-customers',
+  employees: 'posi-live-v1-employees',
+  giftCards: 'posi-live-v1-giftcards',
+  messages: 'posi-live-v1-messages',
+  activities: 'posi-live-v1-activities',
+  attendance: 'posi-live-v1-attendance',
+  expenses: 'posi-live-v1-expenses',
+  stockMoves: 'posi-live-v1-stockmoves',
+  settings: 'posi-live-v1-settings',
+  maintenance: 'posi-live-v1-maintenance',
 };
 
 // helpers
@@ -132,7 +132,7 @@ const stockMoveTypes = {
   adjustment: { label:'Adjustment', color:'#92400e' },
 };
 
-const SHOP = { name:'Green Cross Drug Store', address:'12 Oxford Street, Osu, Accra', phone:'030 274 1122' };
+const SHOP = { name:'Your store', address:'', phone:'' };
 
 const paymentMethods = [
   { id:'Cash', label:'Cash', icon: Banknote, desc:'Cash payment' },
@@ -140,37 +140,8 @@ const paymentMethods = [
   { id:'Gift', label:'Gift', icon: Gift, desc:'Gift card' },
 ];
 
-const starterProducts = [
-  { id:'p1', name:'Paracetamol 500mg', sku:'PARA-500', category:'Pain Relief', price:12.5, cost:7, stock:48, barcode:'890123', brand:'20 tablets', supplier:'Ernest Chemists', expiry:'2027-04-30' },
-  { id:'p2', name:'Ibuprofen 400mg', sku:'IBU-400', category:'Pain Relief', price:18, cost:11, stock:28, barcode:'890124', brand:'20 tablets', supplier:'Ernest Chemists', expiry:'2027-02-28' },
-  { id:'p3', name:'Amoxicillin 500mg', sku:'AMOX-500', category:'Antibiotics', price:35, cost:22, stock:24, barcode:'890125', brand:'21 capsules', supplier:'M&G Pharma', expiry:'2026-12-31' },
-  { id:'p4', name:'Coartem 20/120', sku:'COART-24', category:'Antimalarials', price:85, cost:62, stock:19, barcode:'890126', brand:'24 tablets', supplier:'Novartis GH', expiry:'2027-08-31' },
-  { id:'p5', name:'Malaria Test Kit', sku:'MAL-TEST', category:'Devices', price:25, cost:16, stock:7, barcode:'890127', brand:'SD Bioline', supplier:'Lab Supplies Ltd', expiry:'2026-11-30' },
-  { id:'p6', name:'ORS Sachet', sku:'ORS-SACH', category:'First Aid', price:6, cost:3.5, stock:33, barcode:'890128', brand:'Cerlyte', supplier:'Uniliver Ghana', expiry:'2027-06-30' },
-  { id:'p7', name:'Vitamin C 1000mg', sku:'VITC-1000', category:'Vitamins', price:45, cost:32, stock:51, barcode:'890129', brand:'60 tablets', supplier:'Vita Health', expiry:'2027-09-30' },
-  { id:'p8', name:'Digital Thermometer', sku:'THERM-D', category:'Devices', price:42, cost:26, stock:22, barcode:'890130', brand:'CarePlus', supplier:'Lab Supplies Ltd', expiry:'2029-01-31' },
-  { id:'p9', name:'Cough Syrup 100ml', sku:'COUGH-100', category:'Cough & Cold', price:22, cost:14, stock:48, barcode:'890131', brand:'Cofex', supplier:'M&G Pharma', expiry:'2026-12-15' },
-  { id:'p10', name:'Baby Diapers Size 3', sku:'DIAP-3', category:'Baby & Mother', price:65, cost:48, stock:3, barcode:'890132', brand:'Pampers Care', supplier:'Uniliver Ghana', expiry:'2027-03-31' },
-  { id:'p11', name:'Antiseptic Cream 30g', sku:'ANTIS-30', category:'Personal Care', price:24, cost:16, stock:60, barcode:'890133', brand:'Savlon', supplier:'Ernest Chemists', expiry:'2027-05-31' },
-  { id:'p12', name:'First Aid Kit Basic', sku:'AID-KIT', category:'First Aid', price:95, cost:70, stock:15, barcode:'890134', brand:'MediKit', supplier:'Lab Supplies Ltd', expiry:'2028-12-31' },
-];
-
-const starterCustomers = [
-  { id:'c1', name:'Walk-in customer', phone:'', email:'', address:'', balance:0, totalSpent:0, visits:0, isWalkIn:true },
-  { id:'c2', name:'Akosua Boateng', phone:'0244123456', email:'akosua@example.com', address:'East Legon, Accra', balance:120, totalSpent:1250, visits:18 },
-  { id:'c3', name:'Kwame Asare', phone:'0207654321', email:'kwame@example.com', address:'Spintex, Accra', balance:0, totalSpent:890, visits:12 },
-  { id:'c4', name:'Ama Serwaa', phone:'0551234567', email:'ama@example.com', address:'Tema', balance:250, totalSpent:2100, visits:24 },
-  { id:'c5', name:'Joseph Mensah', phone:'0249988776', email:'joseph@example.com', address:'Madina, Accra', balance:45.5, totalSpent:560, visits:8 },
-];
-
-// Sign-in credentials. Passwords are never stored in plain text — only a
-// salted SHA-256 hash (see hashPassword). These starter logins exist so a
-// fresh install can be opened; the owner should change them after first sign-in.
-const DEFAULT_CREDENTIALS = {
-  e1: { username:'owner', password:'owner123' },
-  e2: { username:'ama', password:'ama123' },
-  e3: { username:'kwame', password:'kwame123' },
-};
+const walkInCustomers = [{ id:'c1', name:'Walk-in customer', phone:'', email:'', address:'', balance:0, totalSpent:0, visits:0, isWalkIn:true }];
+const SETUP_KEY = 'posi-live-v1-setup';
 
 // SHA-256 via Web Crypto, with a deterministic fallback for contexts where
 // crypto.subtle is unavailable (non-secure origins). Local-first demo hashing:
@@ -190,57 +161,6 @@ async function hashPassword(password){
   return (h2>>>0).toString(16).padStart(8,'0') + (h1>>>0).toString(16).padStart(8,'0');
 }
 const normalizeUsername = (u) => String(u||'').trim().toLowerCase();
-const deriveUsername = (emp) => normalizeUsername(DEFAULT_CREDENTIALS[emp?.id]?.username || String(emp?.name||'user').trim().split(/\s+/)[0] || 'user');
-
-const starterEmployees = [
-  { id:'e1', name:'Abena Mensah', role:'owner', phone:'0244000001', email:'owner@shop.com', shift:'08:00-17:00', status:'On shift', salary:0, initials:'AM', username:'owner' },
-  { id:'e2', name:'Ama Boateng', role:'cashier', phone:'0244000002', email:'ama@shop.com', shift:'08:00-16:00', status:'On shift', salary:1800, initials:'AB', username:'ama' },
-  { id:'e3', name:'Kwame Owusu', role:'cashier', phone:'0244000003', email:'kwame@shop.com', shift:'09:00-17:00', status:'On shift', salary:1700, initials:'KO', username:'kwame' },
-];
-
-const starterGiftCards = [
-  { id:'g1', code:'GIFT-100-001', balance:100, original:100, customerId:'c2', customerName:'Akosua Boateng', expiry:'2026-12-31', status:'active' },
-  { id:'g2', code:'GIFT-50-002', balance:25.5, original:50, customerId:'c4', customerName:'Ama Serwaa', expiry:'2026-11-30', status:'active' },
-  { id:'g3', code:'GIFT-200-003', balance:200, original:200, customerId:'', customerName:'', expiry:'2027-01-15', status:'active' },
-];
-
-const starterSales = [
-  { id:'POS-02487', invoiceNumber:'INV-02487', date:todayKey(), time:'10:42', cashier:'Ama Boateng', cashierId:'e2', customerId:'c1', customerName:'Walk-in customer', items:[{productId:'p1',name:'Paracetamol 500mg',qty:1,unitPrice:12.5,lineTotal:12.5},{productId:'p7',name:'Vitamin C 1000mg',qty:2,unitPrice:45,lineTotal:90}], subtotal:102.5, discount:0, tax:0, total:102.5, payment:'Cash', paymentDetail:{}, itemCount:3, status:'paid' },
-  { id:'POS-02486', invoiceNumber:'INV-02486', date:todayKey(), time:'10:31', cashier:'Kwame Owusu', cashierId:'e3', customerId:'c2', customerName:'Akosua Boateng', items:[{productId:'p2',name:'Ibuprofen 400mg',qty:2,unitPrice:18,lineTotal:36},{productId:'p8',name:'Digital Thermometer',qty:1,unitPrice:42,lineTotal:42}], subtotal:78, discount:0, tax:0, total:78, payment:'MoMo', paymentDetail:{phone:'0244123456', txn:'MOMO-123456'}, itemCount:3, status:'paid' },
-  { id:'POS-02485', invoiceNumber:'INV-02485', date:todayKey(), time:'09:55', cashier:'Ama Boateng', cashierId:'e2', customerId:'c4', customerName:'Ama Serwaa', items:[{productId:'p3',name:'Amoxicillin 500mg',qty:1,unitPrice:35,lineTotal:35}], subtotal:35, discount:3.5, tax:0, total:31.5, payment:'Cash', paymentDetail:{}, itemCount:1, status:'paid' },
-  { id:'POS-02484', invoiceNumber:'INV-02484', date:todayKey(), time:'09:18', cashier:'Kwame Owusu', cashierId:'e3', customerId:'c3', customerName:'Kwame Asare', items:[{productId:'p9',name:'Cough Syrup 100ml',qty:1,unitPrice:22,lineTotal:22}], subtotal:22, discount:0, tax:0, total:22, payment:'Gift', paymentDetail:{code:'GIFT-50-002', used:22}, itemCount:1, status:'paid' },
-];
-
-const starterMessages = [
-  { id:'m1', from:'Abena Mensah', fromId:'e1', to:'all', toName:'All Staff', subject:'Morning briefing', body:'Please ensure shelves are restocked before 9am. New drug shipment arrived. Check expiry dates on all packs.', date:todayKey(), time:'08:15', readBy:[] },
-  { id:'m2', from:'Abena Mensah', fromId:'e1', to:'e2', toName:'Ama Boateng', subject:'Customer follow-up', body:'Akosua Boateng has a pending balance of GH\u20b5120. Please remind her on next visit.', date:todayKey(), time:'09:00', readBy:[] },
-];
-
-const starterExpenses = [
-  { id:'x1', date:daysAgo(0), category:'Utilities', amount:180, payment:'Cash', note:'Electricity top-up (ECG)', by:'Abena Mensah' },
-  { id:'x2', date:daysAgo(1), category:'Transport', amount:65, payment:'Cash', note:'Drug delivery to shop', by:'Ama Boateng' },
-  { id:'x3', date:daysAgo(2), category:'Supplies', amount:240, payment:'MoMo', note:'Receipt rolls & carrier bags', by:'Abena Mensah' },
-  { id:'x4', date:daysAgo(3), category:'Maintenance', amount:320, payment:'Cash', note:'Fridge servicing', by:'Abena Mensah' },
-  { id:'x5', date:daysAgo(5), category:'Marketing', amount:150, payment:'MoMo', note:'Local radio promo', by:'Abena Mensah' },
-  { id:'x6', date:daysAgo(6), category:'Rent', amount:1500, payment:'Cash', note:'Monthly shop rent', by:'Abena Mensah' },
-];
-
-const starterStockMoves = [
-  { id:'sm1', productId:'p1', productName:'Paracetamol 500mg', type:'restock', qty:20, date:daysAgo(2), time:'09:15', by:'Abena Mensah', note:'Ernest Chemists delivery' },
-  { id:'sm2', productId:'p5', productName:'Malaria Test Kit', type:'adjustment', qty:-2, date:daysAgo(1), time:'16:40', by:'Ama Boateng', note:'Damaged kits' },
-  { id:'sm3', productId:'p11', productName:'Antiseptic Cream 30g', type:'restock', qty:24, date:daysAgo(1), time:'11:05', by:'Abena Mensah', note:'Ernest Chemists delivery' },
-  { id:'sm4', productId:'p1', productName:'Paracetamol 500mg', type:'sale', qty:-1, cost:7, unitPrice:12.5, date:todayKey(), time:'10:42', by:'Ama Boateng', note:'POS-02487' },
-  { id:'sm5', productId:'p7', productName:'Vitamin C 1000mg', type:'sale', qty:-2, cost:32, unitPrice:45, date:todayKey(), time:'10:42', by:'Ama Boateng', note:'POS-02487' },
-  { id:'sm6', productId:'p2', productName:'Ibuprofen 400mg', type:'sale', qty:-2, cost:11, unitPrice:18, date:todayKey(), time:'10:31', by:'Kwame Owusu', note:'POS-02486' },
-  { id:'sm7', productId:'p8', productName:'Digital Thermometer', type:'sale', qty:-1, cost:26, unitPrice:42, date:todayKey(), time:'10:31', by:'Kwame Owusu', note:'POS-02486' },
-  { id:'sm8', productId:'p9', productName:'Cough Syrup 100ml', type:'sale', qty:-1, cost:14, unitPrice:22, date:todayKey(), time:'09:18', by:'Kwame Owusu', note:'POS-02484' },
-];
-
-const starterAttendance = [
-  { id:'at1', employeeId:'e1', name:'Abena Mensah', date:todayKey(), in:'07:45', out:null, hours:null },
-  { id:'at2', employeeId:'e2', name:'Ama Boateng', date:todayKey(), in:'07:58', out:null, hours:null },
-];
-
 function usePersistent(key, initial){
   const [val,setVal]=useState(()=>{
     try{ const s=localStorage.getItem(key); return s?JSON.parse(s):initial }catch{ return initial }
@@ -249,26 +169,23 @@ function usePersistent(key, initial){
   return [val,setVal];
 }
 
-function App({offline}){
-  const [products,setProducts]=usePersistent(K.products, starterProducts);
-  const [sales,setSales]=usePersistent(K.sales, starterSales);
-  const [customers,setCustomers]=usePersistent(K.customers, starterCustomers);
-  const [employees,setEmployees]=usePersistent(K.employees, starterEmployees);
-  const [giftCards,setGiftCards]=usePersistent(K.giftCards, starterGiftCards);
-  const [messages,setMessages]=usePersistent(K.messages, starterMessages);
-  const [activities,setActivities]=usePersistent(K.activities, [
-    {id:'a1',type:'sale',title:'Ama Boateng completed a sale',detail:'GH₵ 109 · Cash',date:todayKey(),time:'10:42'},
-    {id:'a2',type:'sale',title:'Kwame Owusu completed a sale',detail:'GH₵ 74 · MoMo',date:todayKey(),time:'10:31'},
-  ]);
-  const [attendance,setAttendance]=usePersistent(K.attendance, starterAttendance);
-  const [expenses,setExpenses]=usePersistent(K.expenses, starterExpenses);
-  const [stockMoves,setStockMoves]=usePersistent(K.stockMoves, starterStockMoves);
-  const [settings,setSettings]=usePersistent(K.settings, DEFAULT_SETTINGS);
+function App({offline,setup}){
+  const [products,setProducts]=usePersistent(K.products, []);
+  const [sales,setSales]=usePersistent(K.sales, []);
+  const [customers,setCustomers]=usePersistent(K.customers, walkInCustomers);
+  const [employees,setEmployees]=usePersistent(K.employees, [setup.owner]);
+  const [giftCards,setGiftCards]=usePersistent(K.giftCards, []);
+  const [messages,setMessages]=usePersistent(K.messages, []);
+  const [activities,setActivities]=usePersistent(K.activities, []);
+  const [attendance,setAttendance]=usePersistent(K.attendance, []);
+  const [expenses,setExpenses]=usePersistent(K.expenses, []);
+  const [stockMoves,setStockMoves]=usePersistent(K.stockMoves, []);
+  const [settings,setSettings]=usePersistent(K.settings, setup.settings);
   const [maintenance,setMaintenance]=usePersistent(K.maintenance, DEFAULT_MAINTENANCE);
   const shop = {...SHOP,...settings,name:settings.shopName||SHOP.name};
   const discountPercent = Number(settings.discountPercent ?? 10);
 
-  const [userId,setUserId]=useState(()=>{ try{ return sessionStorage.getItem('pos-user-id')||null }catch{return null}});
+  const [userId,setUserId]=useState(()=>{ try{ return sessionStorage.getItem('posi-live-user-id')||null }catch{return null}});
   const [view,setView]=useState('pos');
   const [toast,setToast]=useState('');
   const [success,setSuccess]=useState(null);
@@ -303,7 +220,6 @@ function App({offline}){
   const [staffSales,setStaffSales]=useState(null); // employee whose sales history is open
   const [credentialsFor,setCredentialsFor]=useState(null); // employee whose login the owner is managing
   const [showMyPassword,setShowMyPassword]=useState(false); // signed-in user changing their own password
-  const credentialsReady = useRef(false);
   const [filterSales,setFilterSales]=useState({search:'',payment:'All',date:'All',cashier:'All'});
 
   const currentUser = employees.find(e=>e.id===userId) || null;
@@ -336,24 +252,6 @@ function App({offline}){
     setView(emp ? (emp.role==='owner' ? 'dashboard' : 'pos') : 'pos');
   },[userId]);
 
-  // Older locally saved staff records have no username/passwordHash. Give them
-  // the documented starter credentials (owner: owner/owner123, staff: first
-  // name / first name + 123) so nobody is locked out by the upgrade.
-  useEffect(()=>{
-    if(credentialsReady.current) return;
-    if(!employees.some(e=>!e.username || !e.passwordHash)){ credentialsReady.current = true; return }
-    credentialsReady.current = true;
-    (async()=>{
-      const patched = await Promise.all(employees.map(async e=>{
-        if(e.username && e.passwordHash) return e;
-        const username = e.username || deriveUsername(e);
-        const fallback = DEFAULT_CREDENTIALS[e.id]?.password || `${username}123`;
-        return {...e, username, passwordHash: e.passwordHash || await hashPassword(fallback)};
-      }));
-      setEmployees(patched);
-    })();
-  },[employees,setEmployees]);
-
   // Username + password sign-in. Only accounts the owner created (Staff
   // Tracking) can sign in; there is no self-registration.
   const signIn = async (username,password)=>{
@@ -361,12 +259,12 @@ function App({offline}){
     if(!emp) return 'No account with that username. Ask the owner to create your account.';
     if(!emp.passwordHash) return 'This account has no password yet. Ask the owner to set one.';
     if(await hashPassword(password) !== emp.passwordHash) return 'Wrong password. Try again or ask the owner to reset it.';
-    try{ sessionStorage.setItem('pos-user-id',emp.id); sessionStorage.removeItem('pos-role'); sessionStorage.removeItem('pos-cashier') }catch{}
+    try{ sessionStorage.setItem('posi-live-user-id',emp.id); sessionStorage.removeItem('pos-role'); sessionStorage.removeItem('pos-cashier') }catch{}
     setUserId(emp.id); setView(emp.role==='owner'?'dashboard':'pos');
     return null;
   };
   const signOut = ()=>{
-    try{ sessionStorage.removeItem('pos-user-id'); sessionStorage.removeItem('pos-role'); sessionStorage.removeItem('pos-cashier') }catch{}
+    try{ sessionStorage.removeItem('posi-live-user-id'); sessionStorage.removeItem('pos-role'); sessionStorage.removeItem('pos-cashier') }catch{}
     setUserId(null); setCart([]); setView('pos');
     // Never leave another worker's invoice/receipt or sale edit open for the
     // next person who signs in on this device.
@@ -2909,9 +2807,49 @@ function ReceiptModal({sale,shop=SHOP,receiptFooter='',onClose}){
   );
 }
 
+function SetupScreen({onComplete}){
+  const [form,setForm] = useState({shopName:'',address:'',phone:'',name:'',username:'',password:'',confirm:''});
+  const [error,setError] = useState('');
+  const [busy,setBusy] = useState(false);
+  const submit = async e=>{
+    e.preventDefault();
+    if(busy) return;
+    if(!form.shopName.trim() || !form.name.trim()) { setError('Enter your store name and owner name.'); return }
+    if(normalizeUsername(form.username).length<3) { setError('Username must have at least 3 characters.'); return }
+    if(form.password.length<8) { setError('Choose a password with at least 8 characters.'); return }
+    if(form.password!==form.confirm) { setError('Passwords do not match.'); return }
+    setBusy(true); setError('');
+    try{
+      const setup = {
+        settings:{...DEFAULT_SETTINGS,shopName:form.shopName.trim(),address:form.address.trim(),phone:form.phone.trim()},
+        owner:{id:uid('owner'),name:form.name.trim(),role:'owner',username:normalizeUsername(form.username),passwordHash:await hashPassword(form.password),phone:form.phone.trim(),email:'',shift:'',status:'Off shift',salary:0,initials:initials(form.name.trim())}
+      };
+      // A single durable write makes setup recoverable even if this tab closes immediately.
+      localStorage.setItem(SETUP_KEY,JSON.stringify(setup));
+      onComplete(setup);
+    }catch{ setError('Could not save your store. Allow browser storage and try again.'); }
+    finally{ setBusy(false); }
+  };
+  return <div className="setup-page"><form className="login-card setup-card" onSubmit={submit}>
+    <div className="eyebrow">POSI · YOUR NEW STORE</div>
+    <h1>Start with a clean slate.</h1>
+    <p>Create your store and its owner account. No sample products, sales or staff will be added.</p>
+    <div className="setup-fields">{[
+      ['shopName','Store name','text',true],['address','Store address','text',false],['phone','Contact phone','tel',false],
+      ['name','Owner full name','text',true],['username','Owner username','text',true],['password','Password (8+ characters)','password',true],['confirm','Confirm password','password',true]
+    ].map(([key,label,type,required])=><div className="field" key={key}><label htmlFor={'setup-'+key}>{label}</label><input id={'setup-'+key} type={type} required={required} minLength={key==='password'?8:key==='username'?3:undefined} autoComplete={type==='password'?'new-password':key==='username'?'username':'off'} value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})}/></div>)}</div>
+    <p className="setup-note">Stored only in this browser on this device. There is no cloud backup or password recovery service. Export backups regularly in Settings. Existing demo records stay separate and are not imported.</p>
+    {error && <p role="alert" style={{color:'#b91c1c'}}>{error}</p>}
+    <button className="btn primary" disabled={busy} type="submit">{busy?'Creating store…':'Create store & continue to sign in'} <ArrowRight size={16}/></button>
+  </form></div>;
+}
+
 function Root(){
   const offline = useOfflineSupport();
-  return <><App offline={offline}/><OfflineBanner {...offline}/></>;
+  const [setup,setSetup] = useState(()=>{
+    try{ return JSON.parse(localStorage.getItem(SETUP_KEY)) || null }catch{ return null }
+  });
+  return <>{setup ? <App offline={offline} setup={setup}/> : <SetupScreen onComplete={setSetup}/>}<OfflineBanner {...offline}/></>;
 }
 
 createRoot(document.getElementById('root')).render(<Root/>);

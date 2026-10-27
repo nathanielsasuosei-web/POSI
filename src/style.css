@@ -640,3 +640,12 @@ tfoot tr:first-child td{border-top:2px solid #dfe7e2}
   .ai-composer .search{min-width:0}
   .ai-composer .btn{flex:1;justify-content:center}
 }
+
+.setup-page { min-height:100dvh; padding:40px 20px; display:grid; place-items:center; background:radial-gradient(ellipse at top left,#d1fae5,transparent 60%),#f4f7f5; }
+.setup-card { width:100%; max-width:660px; padding:32px; background:white; border:1px solid #dce7e1; border-radius:20px; box-shadow:0 18px 60px #103c2310; }
+.setup-card h1 { margin:12px 0; letter-spacing:-1px; }
+.setup-card p { color:#60756a; line-height:1.6; font-size:13px; }
+.setup-fields { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:24px 0; }
+.setup-fields .field:first-child { grid-column:1/-1; }
+.setup-note { padding:12px; background:#f0f8f4; border-radius:8px; }
+@media(max-width:600px) { .setup-fields { grid-template-columns:1fr; } .setup-card {padding:24px;} }
