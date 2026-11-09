@@ -1,5 +1,7 @@
 POSI for Windows: pharmacy point of sale, stock, sales, expenses, staff and reports. It works fully offline.
 
+This update includes the latest change restricting sales history to owner accounts.
+
 ### Which file do I download?
 
 | Your Windows | Download |
