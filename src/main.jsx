@@ -201,6 +201,7 @@ function App({offline,setup,onRestart}){
   const [showPay,setShowPay]=useState(false);
   const [selectedInvoice,setSelectedInvoice]=useState(null);
   const [selectedReceipt,setSelectedReceipt]=useState(null);
+  const [checkoutSaleId,setCheckoutSaleId]=useState(null);
   const [editingSale,setEditingSale]=useState(null); // owner correcting a recorded sale
   const [mobileCart,setMobileCart]=useState(false);
   const [mobileMore,setMobileMore]=useState(false);
@@ -248,6 +249,7 @@ function App({offline,setup,onRestart}){
   // worker's sale filters, open invoice, receipt or correction form over.
   useEffect(()=>{
     setSelectedInvoice(null); setSelectedReceipt(null); setEditingSale(null);
+    setSuccess(null); setCheckoutSaleId(null); setStaffSales(null);
     setFilterSales({search:'',payment:'All',date:'All',cashier:'All'});
     const emp = employees.find(e=>e.id===userId);
     setView(emp ? (emp.role==='owner' ? 'dashboard' : 'pos') : 'pos');
@@ -270,6 +272,7 @@ function App({offline,setup,onRestart}){
     // Never leave another worker's invoice/receipt or sale edit open for the
     // next person who signs in on this device.
     setSelectedInvoice(null); setSelectedReceipt(null); setEditingSale(null);
+    setSuccess(null); setCheckoutSaleId(null); setStaffSales(null);
     setFilterSales({search:'',payment:'All',date:'All',cashier:'All'});
   };
 
@@ -589,14 +592,15 @@ function App({offline,setup,onRestart}){
     setSales(prev=>[sale,...prev]);
     addActivity({type:'sale',title:`${sale.cashier} completed a sale`,detail:`${format(total)} · ${payment}`});
     setCart([]); setDiscountOn(false); setShowPay(false); setMobileCart(false);
+    setCheckoutSaleId(sale.id);
     setSuccess(sale);
     if(isOwner && lowNow.length){ setTimeout(()=>flash(`Low stock alert: ${lowNow.join(', ')} — restock soon`), 400); }
-    if(!isOwner) flash(`Sale ${invoiceNumber} recorded — today's sales are under Today's Sales`);
+    if(!isOwner) flash(`Sale ${invoiceNumber} recorded — sales history is visible only to the owner`);
   };
 
-  // A signed-in employee may only open their own sales from today. The owner
-  // can open any sale from any date.
-  const canAccessSale = (sale)=> !!sale && (isOwner || (((sale.cashierId===currentUser?.id) || (sale.cashier===currentUser?.name)) && sale.date===todayKey()));
+  // Only owners can browse recorded sales. Workers may print the checkout
+  // they just completed, but cannot reopen historical invoices or receipts.
+  const canAccessSale = (sale)=> !!currentUser && !!sale && (isOwner || (sale.id===checkoutSaleId && sale.cashierId===currentUser.id));
 
   // Owner correction of a recorded sale: seller, customer, payment, date/time,
   // line items (quantity and unit price), discount, plus a mandatory reason.
@@ -775,8 +779,9 @@ function App({offline,setup,onRestart}){
 
   const todaySales = useMemo(()=> sales.filter(s=>s.date===todayKey()),[sales]);
   const visibleSales = useMemo(()=>{
-    // Owner sees every employee's sales. Workers see only their own sales made today.
-    let list = isOwner ? sales : sales.filter(s=>(s.cashierId===currentUser?.id || s.cashier===currentUser?.name) && s.date===todayKey());
+    // Sales history, including today's sales, is owner-only.
+    if(!isOwner) return [];
+    let list = sales;
     if(filterSales.search){
       const q=filterSales.search.toLowerCase();
       list = list.filter(s=> `${s.invoiceNumber} ${s.customerName} ${s.cashier} ${s.payment}`.toLowerCase().includes(q));
@@ -816,7 +821,6 @@ function App({offline,setup,onRestart}){
     {id:'pos',label:'POS',icon:ShoppingCart},
     {id:'inventory',label:'Items',icon:Package},
     {id:'customers',label:'Customers',icon:Users},
-    {id:'invoices',label:'Today’s Sales',icon:FileText},
     {id:'messages',label:'Messages',icon:MessageSquare},
   ];
   const nav = isOwner?navOwner:navCashier;
@@ -915,7 +919,7 @@ function App({offline,setup,onRestart}){
           {view==='maintenance' && isOwner && <MaintenancePage records={maintenance} onSave={saveMaintenance} onComplete={completeMaintenance} onDelete={deleteMaintenance} />}
           {view==='timeline' && isOwner && <TimelinePage activities={activities} sales={sales} stockMoves={stockMoves} expenses={expenses} maintenance={maintenance} messages={messages} />}
           {view==='settings' && isOwner && <SettingsPage settings={settings} onSave={saveSettings} onExportBackup={exportShopData} onChangePassword={()=>setShowMyPassword(true)} offlineStatus={offline.status} counts={{Products:products.length,Sales:sales.length,Customers:customers.filter(c=>!c.isWalkIn).length,Staff:employees.length,Expenses:expenses.length,Maintenance:maintenance.length}} />}
-          {view==='invoices' && <InvoicesPage sales={visibleSales} products={products} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={(s)=>canAccessSale(s)&&setSelectedInvoice(s)} onViewReceipt={(s)=>canAccessSale(s)&&setSelectedReceipt(s)} onEditSale={isOwner?setEditingSale:undefined} employees={employees} />}
+          {view==='invoices' && isOwner && <InvoicesPage sales={visibleSales} products={products} isOwner={isOwner} filter={filterSales} setFilter={setFilterSales} onViewInvoice={(s)=>canAccessSale(s)&&setSelectedInvoice(s)} onViewReceipt={(s)=>canAccessSale(s)&&setSelectedReceipt(s)} onEditSale={isOwner?setEditingSale:undefined} employees={employees} />}
           {view==='expenses' && isOwner && <ExpensesPage expenses={expenses} onEdit={(e)=>{setEditingExpense(e);setShowExpenseModal(true)}} onAdd={()=>{setEditingExpense(null);setShowExpenseModal(true)}} onDelete={deleteExpense} />}
           {view==='gift' && isOwner && <GiftAccountPage giftCards={giftCards} customers={customers} sales={sales} onAdd={()=>setShowGiftModal(true)} onPayAccount={payAccount} />}
           {view==='staff' && isOwner && <StaffPage employees={employees} sales={sales} attendance={attendance} currentUser={currentUser} onEdit={(e)=>{setEditingEmployee(e);setShowEmployeeModal(true)}} onAdd={()=>{setEditingEmployee(null);setShowEmployeeModal(true)}} onViewSales={setStaffSales} onCredentials={setCredentialsFor} />}
@@ -952,8 +956,8 @@ function App({offline,setup,onRestart}){
       {staffSales && isOwner && <StaffSalesModal employee={staffSales} sales={sales} products={products} onClose={()=>setStaffSales(null)} onViewInvoice={(s)=>{setStaffSales(null);setSelectedInvoice(s)}} onViewReceipt={(s)=>{setStaffSales(null);setSelectedReceipt(s)}} onEdit={setEditingSale} />}
       {editingSale && isOwner && <SaleEditModal sale={editingSale} products={products} customers={customers} employees={employees} giftCards={giftCards} onClose={()=>setEditingSale(null)} onSave={saveSaleEdit} onDelete={deleteSale} />}
       {showPay && <PaymentModal cart={cart} subtotal={subtotal} discount={discount} total={total} customer={selectedCustomer} giftCards={giftCards} onClose={()=>setShowPay(false)} onComplete={completeSale} isOwner={isOwner} />}
-      {selectedInvoice && canAccessSale(selectedInvoice) && <InvoiceModal sale={selectedInvoice} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedInvoice(null)} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} onEditSale={isOwner?((s)=>{setSelectedInvoice(null);setEditingSale(s)}):undefined} />}
-      {selectedReceipt && canAccessSale(selectedReceipt) && <ReceiptModal sale={selectedReceipt} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>setSelectedReceipt(null)} />}
+      {selectedInvoice && canAccessSale(selectedInvoice) && <InvoiceModal sale={selectedInvoice} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>{setSelectedInvoice(null);setCheckoutSaleId(null)}} onPrintReceipt={(s)=>{setSelectedInvoice(null);setSelectedReceipt(s)}} onEditSale={isOwner?((s)=>{setSelectedInvoice(null);setEditingSale(s)}):undefined} />}
+      {selectedReceipt && canAccessSale(selectedReceipt) && <ReceiptModal sale={selectedReceipt} shop={shop} receiptFooter={settings.receiptFooter} onClose={()=>{setSelectedReceipt(null);setCheckoutSaleId(null)}} />}
       {toast && <div className="toast"><CheckCircle2 size={16}/>{toast}</div>}
       {success && <div className="success"><span style={{width:'32px',height:'32px',borderRadius:'50%',background:'#ecfdf5',color:'#065f46',display:'grid',placeItems:'center'}}><Check size={16}/></span><span><b>Sale invoiced!</b><small>{success.invoiceNumber} · {format(success.total)}</small></span><button className="btn small primary" onClick={()=>{setSelectedReceipt(success);setSuccess(null)}}><Printer size={14}/>Print receipt</button><button className="btn small" onClick={()=>{setSelectedInvoice(success);setSuccess(null)}}><FileText size={14}/>Invoice</button><button className="btn icon small" onClick={()=>setSuccess(null)}><X size={14}/></button></div>}
     </div>
@@ -1703,6 +1707,8 @@ function InvoicesPage({sales:salesAll,products=[],isOwner,filter,setFilter,onVie
     return t;
   },{items:0,total:0,cost:0,profit:0});
   const totalMargin = totals.total ? (totals.profit/totals.total*100) : 0;
+  if(!isOwner) return null;
+
   return (
     <div>
       <div className="page-head"><div><div className="eyebrow"><FileText size={12}/> {isOwner?'SALES HISTORY · OWNER':'MY SALES · TODAY ONLY'}</div><h1>{isOwner?'Sales history & receipts':'Today’s sales'}</h1><p>{isOwner?'Every invoice from every cashier — open one to correct it, or filter by calendar date, employee, payment and search.':'Only the sales you complete today appear here. Earlier sales are visible to the owner only.'}</p></div><div className="kpi-row"><span className="kpi"><b>{sales.length}</b> invoices</span><span className="kpi"><b>{format(total)}</b> total</span>{range.from && <span className="kpi" style={{background:'#e6f4f1',color:'#0f766e'}}><CalendarDays size={14}/> <b>{range.to && range.to!==range.from?`${readableDate(range.from)} → ${readableDate(range.to)}`:readableDate(range.from)}</b></span>}<span className="kpi"><Package size={14}/> <b>{totals.items.toLocaleString()}</b> products bought</span>{isOwner && <span className="kpi" style={{background:'#ecfdf5'}}><PiggyBank size={14}/> <b>{format(totals.profit)}</b> profit</span>}<button className="btn small" onClick={()=>{ const header=['Invoice','Date','Time','Seller','Customer','Units bought','Payment','Total',...(isOwner?['Profit']:[])]; const rows=sales.map(s=>[s.invoiceNumber,s.date,s.time,s.cashier,s.customerName,saleUnits(s),s.payment,s.total,...(isOwner?[saleProfit(s,products).toFixed(2)]:[])]); const csv=[header,...rows].map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); const a=document.createElement('a'); a.href=url; a.download=`sales-${range.from?(range.to&&range.to!==range.from?`${range.from}_to_${range.to}`:range.from):todayKey()}.csv`; a.click(); URL.revokeObjectURL(url)}}><Download size={14}/> Export CSV</button></div></div>
