@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { desktopApp } from './platform.js';
 
 const CACHE_PREFIX = 'posi-app-shell-';
 const SW_URL = '/service-worker.js';
 
-// Status values: 'off' (dev / unsupported), 'installing', 'ready', 'failed'
+// Status values: 'off' (dev / unsupported), 'installing', 'ready', 'failed',
+// 'desktop' (installed Windows app: its files are on disk, no service worker needed)
 export function useOfflineSupport() {
-  const supported = typeof navigator !== 'undefined' && 'serviceWorker' in navigator && window.isSecureContext;
-  const [status, setStatus] = useState(import.meta.env.PROD && supported ? 'installing' : 'off');
+  const supported = !desktopApp && typeof navigator !== 'undefined' && 'serviceWorker' in navigator && window.isSecureContext;
+  const [status, setStatus] = useState(desktopApp ? 'desktop' : import.meta.env.PROD && supported ? 'installing' : 'off');
   const [missing, setMissing] = useState([]);
 
   const watchWorker = useCallback(worker => {
@@ -112,6 +114,7 @@ export function OfflineBanner({ status, missing, retry }) {
 }
 
 export function OfflineChip({ status, online }) {
+  if (status === 'desktop') return <span className="chip online" title="POSI is installed on this computer and works without internet"><i /> Desktop app · works offline</span>;
   if (!online) return <span className="chip offline"><i /> Offline{status === 'ready' ? ' · saved here' : ''}</span>;
   if (status === 'ready') return <span className="chip online" title="This device can open the POS without internet"><i /> Online · offline ready</span>;
   if (status === 'installing') return <span className="chip online" title="Saving app files for offline use"><i /> Online · preparing offline</span>;

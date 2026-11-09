@@ -1,0 +1,64 @@
+{
+  "name": "posi-desktop",
+  "productName": "POSI",
+  "version": "1.0.0",
+  "private": true,
+  "description": "POSI pharmacy operations suite — Windows desktop app (Windows 7, 8, 8.1, 10 and 11).",
+  "author": "POSI",
+  "homepage": "https://github.com/nathanielsasuosei-web/POSI",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/app-files.test.cjs",
+    "dist": "node scripts/dist.cjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "electron": "22.3.27",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.posi.pharmacy",
+    "productName": "POSI",
+    "copyright": "Copyright © 2026 POSI",
+    "electronVersion": "22.3.27",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "package.json",
+      "main.cjs",
+      "preload.cjs",
+      "app-files.cjs",
+      "smoke-test.cjs",
+      "renderer/**/*"
+    ],
+    "asar": true,
+    "disableAsarIntegrity": true,
+    "compression": "maximum",
+    "publish": null,
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "resources/icon.ico",
+      "artifactName": "POSI-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "POSI",
+      "uninstallDisplayName": "POSI Pharmacy Operations",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "multiLanguageInstaller": false,
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico"
+    }
+  }
+}

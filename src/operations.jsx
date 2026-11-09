@@ -6,6 +6,7 @@ import {
   ShieldCheck, ShoppingBag, ShoppingCart, Store, Trash2, TrendingUp, UserRound,
   Users, Wallet, Wrench, X
 } from 'lucide-react';
+import { desktopApp } from './platform.js';
 
 const selectOnEnter = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); e.currentTarget.select() } };
 
@@ -487,7 +488,7 @@ export function SettingsPage({ settings, onSave, onExportBackup, onChangePasswor
     <div className="settings-layout">
       <aside className="card settings-nav" aria-label="Settings sections">
         {tabs.map(item => <button type="button" key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => { setTab(item.id); setError(''); }}><item.icon size={17}/><span><b>{item.label}</b><small>{item.note}</small></span><ArrowRight size={13}/></button>)}
-        <div className="settings-local"><Database size={15}/><span><b>Local-first workspace</b><small>Your records stay in this browser.</small></span></div>
+        <div className="settings-local"><Database size={15}/><span><b>Local-first workspace</b><small>{desktopApp ? 'Your records stay on this computer.' : 'Your records stay in this browser.'}</small></span></div>
       </aside>
 
       <div className="settings-content">
@@ -520,15 +521,19 @@ export function SettingsPage({ settings, onSave, onExportBackup, onChangePasswor
 
         {tab === 'data' && <div className="settings-panel-stack">
           <div className="card settings-panel">
-            <div className="settings-panel-head"><span className="modal-symbol green"><HardDriveDownload size={19}/></span><div><h2>Shop data backup</h2><p className="sub">Download a complete JSON snapshot of records stored in this browser.</p></div></div>
+            <div className="settings-panel-head"><span className="modal-symbol green"><HardDriveDownload size={19}/></span><div><h2>Shop data backup</h2><p className="sub">{desktopApp ? 'Save a complete JSON snapshot of the records stored on this computer.' : 'Download a complete JSON snapshot of records stored in this browser.'}</p></div></div>
             <div className="data-summary">{Object.entries(counts).map(([label, count]) => <div key={label}><b>{count}</b><small>{label}</small></div>)}</div>
             <div className="settings-action-row"><div><b>Export all shop data</b><small>Includes products, sales, customers, staff, expenses, attendance, maintenance and settings.</small></div><button type="button" className="btn primary" onClick={onExportBackup}><Download size={14}/> Export JSON</button></div>
-            <div className="settings-note warning"><AlertTriangle size={15}/><span>Keep the export somewhere safe. Browser data is device-specific; clearing site data can permanently remove records that have not been exported.</span></div>
+            <div className="settings-note warning"><AlertTriangle size={15}/><span>{desktopApp
+              ? 'Keep the export somewhere safe, such as a USB drive. Records are stored only on this computer: uninstalling or updating POSI keeps them, but a failed hard drive or a Windows reinstall does not.'
+              : 'Keep the export somewhere safe. Browser data is device-specific; clearing site data can permanently remove records that have not been exported.'}</span></div>
           </div>
           <div className="card settings-panel">
             <div className="settings-panel-head"><span className="modal-symbol blue"><KeyRound size={19}/></span><div><h2>Account & offline status</h2><p className="sub">Manage your own sign-in and check this device's storage mode.</p></div></div>
             <div className="settings-action-row"><div><b>Your password</b><small>Change your own password. Your current password is required.</small></div><button type="button" className="btn" onClick={onChangePassword}><KeyRound size={14}/> Change password</button></div>
-            <div className="settings-action-row"><div><b>Offline application files</b><small>{offlineStatus === 'ready' ? 'Saved on this device and ready to open without internet.' : offlineStatus === 'installing' ? 'Preparing app files for offline use.' : 'Offline app files are not active in this session. Shop records remain stored locally.'}</small></div><span className={`status ${offlineStatus === 'ready' ? 'ok' : 'neutral'}`}><i/>{offlineStatus === 'ready' ? 'Offline ready' : offlineStatus === 'installing' ? 'Preparing' : 'Local data only'}</span></div>
+            {offlineStatus === 'desktop'
+              ? <div className="settings-action-row"><div><b>Windows desktop app</b><small>POSI {desktopApp?.version} is installed on this computer and opens without internet.{desktopApp?.dataFolder ? ` Records are saved in ${desktopApp.dataFolder}.` : ''}</small></div><span className="status ok"><i/>Installed</span></div>
+              : <div className="settings-action-row"><div><b>Offline application files</b><small>{offlineStatus === 'ready' ? 'Saved on this device and ready to open without internet.' : offlineStatus === 'installing' ? 'Preparing app files for offline use.' : 'Offline app files are not active in this session. Shop records remain stored locally.'}</small></div><span className={`status ${offlineStatus === 'ready' ? 'ok' : 'neutral'}`}><i/>{offlineStatus === 'ready' ? 'Offline ready' : offlineStatus === 'installing' ? 'Preparing' : 'Local data only'}</span></div>}
           </div>
         </div>}
       </div>
