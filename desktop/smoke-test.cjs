@@ -21,9 +21,31 @@ const STORE = { shopName: 'Smoke Test Pharmacy', address: 'Osu, Accra', phone: '
 
 const checks = [];
 const problems = [];
+const events = []; // timeline for diagnosing failures
+const started = Date.now();
+let currentStep = 'starting';
 let finished = false;
 let onDownload = null;
 const messageBoxes = [];
+
+function note(text) {
+  events.push(`${((Date.now() - started) / 1000).toFixed(1)}s ${text}`);
+}
+
+function step(name) {
+  currentStep = name;
+  note(name);
+}
+
+// Electron calls that can wait forever (e.g. a window that never paints) get a
+// time limit, so a failure names the step instead of hitting the overall timeout.
+function withTimeout(promise, ms, message) {
+  let timer;
+  const limit = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
 
 function prepare(app) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -58,7 +80,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const loaded = contents => new Promise(resolve => contents.once('did-finish-load', resolve));
 
 function pageTools(contents) {
-  const js = code => contents.executeJavaScript(code, true);
+  const js = code => withTimeout(contents.executeJavaScript(code, true), 15000, 'The page did not respond to a script within 15 seconds');
   const quote = value => JSON.stringify(value);
   return {
     js,
@@ -102,13 +124,14 @@ function pageTools(contents) {
       return js(`(document.querySelector(${quote(selector)}) || {}).textContent || ''`);
     },
     async screenshot(name) {
-      const image = await contents.capturePage();
+      const image = await withTimeout(contents.capturePage(), 15000, `The window did not paint within 15 seconds (screenshot ${name})`);
       fs.writeFileSync(path.join(OUTPUT_DIR, name), image.toPNG());
     },
   };
 }
 
 async function signIn(page) {
+  step('signing in');
   await page.setValue('#login-username', STORE.username);
   await page.setValue('#login-password', STORE.password);
   await page.click('.login-card button.btn.primary');
@@ -116,7 +139,9 @@ async function signIn(page) {
 }
 
 async function setupPhase(app, contents, page) {
+  step('waiting for the setup screen');
   await page.waitFor('.setup-page');
+  step('checking the page environment');
   const env = await page.js(`({
     desktop: Boolean(window.posiDesktop && window.posiDesktop.isDesktop),
     version: window.posiDesktop ? window.posiDesktop.version : '',
@@ -133,8 +158,10 @@ async function setupPhase(app, contents, page) {
   check('Secure origin with Web Crypto', env.secure && env.webCrypto && env.origin === 'posi://app', env.origin);
   check('Styles are applied', env.styled);
   check('Page has no Node.js access', env.noNode);
+  step('taking a screenshot of the setup screen');
   await page.screenshot('1-setup.png');
 
+  step('creating the store');
   const fields = { shopName: STORE.shopName, address: STORE.address, phone: STORE.phone, name: STORE.name, username: STORE.username, password: STORE.password, confirm: STORE.password };
   for (const [key, value] of Object.entries(fields)) await page.setValue(`#setup-${key}`, value);
   await page.click('.setup-card button[type=submit]');
@@ -146,12 +173,15 @@ async function setupPhase(app, contents, page) {
   await sleep(500);
   const chip = (await page.text('.top-actions .chip')).trim();
   check('Status shows the desktop app', chip.includes('Desktop app'), chip);
+  step('taking a screenshot of the dashboard');
   await page.screenshot('2-dashboard.png');
 
+  step('checking message boxes');
   const answered = await page.js(`(() => { const ok = window.confirm('Smoke test question'); window.alert('Smoke test notice'); return ok; })()`);
   const kinds = messageBoxes.map(box => box.kind).join(', ');
   check('alert() and confirm() use desktop message boxes', answered === true && kinds === 'confirm, alert', kinds || 'none received');
 
+  step('opening Settings');
   await page.clickText('.nav-item', 'Settings');
   await page.waitFor('.settings-nav');
   await page.clickText('.settings-nav button', 'Data & security');
@@ -160,6 +190,7 @@ async function setupPhase(app, contents, page) {
   check('Settings explain where desktop records are kept', settingsText.includes('this computer'), '');
   await page.screenshot('3-settings.png');
 
+  step('exporting a backup');
   const download = new Promise((resolve, reject) => {
     onDownload = resolve;
     setTimeout(() => reject(new Error('No backup download within 20 seconds')), 20000);
@@ -169,10 +200,12 @@ async function setupPhase(app, contents, page) {
   const backup = JSON.parse(fs.readFileSync(target, 'utf8'));
   check('Backup export downloads a complete file', state === 'completed' && backup.app === 'POSI' && backup.data.settings.shopName === STORE.shopName, path.basename(target));
 
-  const pdf = await contents.printToPDF({ printBackground: true });
+  step('printing to PDF');
+  const pdf = await withTimeout(contents.printToPDF({ printBackground: true }), 30000, 'Printing to PDF did not finish within 30 seconds');
   fs.writeFileSync(path.join(OUTPUT_DIR, '4-print-test.pdf'), pdf);
   check('Printing pipeline works', pdf.length > 500 && pdf.slice(0, 4).toString() === '%PDF', `${pdf.length} bytes`);
 
+  step('reloading the page');
   session.defaultSession.flushStorageData();
   const reloaded = loaded(contents);
   contents.reload();
@@ -183,6 +216,7 @@ async function setupPhase(app, contents, page) {
 }
 
 async function reopenPhase(page) {
+  step('waiting for the sign-in screen');
   await page.waitFor('#login-username, .setup-page');
   const onSetup = await page.js(`Boolean(document.querySelector('.setup-page'))`);
   check('Store is still there after restarting the app', !onSetup, onSetup ? 'setup screen was shown again' : 'sign-in screen shown');
@@ -190,6 +224,7 @@ async function reopenPhase(page) {
   const shopName = (await page.text('.shop-copy b')).trim();
   check('Saved store details load after restart', shopName === STORE.shopName, shopName);
   await sleep(300);
+  step('taking a screenshot after the restart');
   await page.screenshot('5-after-restart.png');
 }
 
@@ -212,6 +247,7 @@ function finish(app, error) {
     sandbox: !app.commandLine.hasSwitch('no-sandbox'),
     checks,
     problems,
+    events,
   };
   fs.writeFileSync(path.join(OUTPUT_DIR, 'summary.json'), JSON.stringify(summary, null, 2));
   try { session.defaultSession.flushStorageData(); } catch (flushError) { /* quitting */ }
@@ -220,6 +256,21 @@ function finish(app, error) {
 
 function run(app, win) {
   const contents = win.webContents;
+  note('window created');
+  win.once('ready-to-show', () => note('window ready to show'));
+  contents.on('dom-ready', () => note('page DOM ready'));
+  contents.on('did-finish-load', () => note('page loaded'));
+  contents.on('unresponsive', () => {
+    problems.push('The page stopped responding');
+    note('page unresponsive');
+  });
+  contents.on('responsive', () => note('page responsive again'));
+  app.on('child-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit') return;
+    const text = `${details.type} process ${details.reason}${details.exitCode ? ` (exit code ${details.exitCode})` : ''}`;
+    problems.push(text);
+    note(text);
+  });
   contents.on('console-message', (_event, level, message, line, sourceId) => {
     if (level >= 3) problems.push(`Console error: ${message} (${sourceId}:${line})`);
   });
@@ -230,9 +281,10 @@ function run(app, win) {
     problems.push(`Renderer stopped: ${details.reason}`);
     finish(app, new Error(`Renderer stopped: ${details.reason}`));
   });
-  const timer = setTimeout(() => finish(app, new Error(`Timed out after ${TIMEOUT_MS / 1000} seconds`)), TIMEOUT_MS);
+  const timer = setTimeout(() => finish(app, new Error(`Timed out after ${TIMEOUT_MS / 1000} seconds while ${currentStep}`)), TIMEOUT_MS);
 
   const page = pageTools(contents);
+  step('waiting for the page to load');
   const ready = contents.isLoading() ? loaded(contents) : Promise.resolve();
   ready
     .then(() => (PHASE === 'reopen' ? reopenPhase(page) : setupPhase(app, contents, page)))

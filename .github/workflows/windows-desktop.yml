@@ -99,7 +99,7 @@ jobs:
       - name: Install, run and uninstall
         shell: pwsh
         run: |
-          function Fail($message) { Write-Output "::error title=Installer test (${{ matrix.arch }}, ${{ matrix.os }}) failed::$message"; exit 1 }
+          function Fail($message) { Write-Output "::error title=Installer test (${{ matrix.arch }} on ${{ matrix.os }}) failed::$message"; exit 1 }
           $installer = Get-ChildItem installers/POSI-Setup-*-${{ matrix.arch }}.exe | Select-Object -First 1
           if (-not $installer) { Fail 'The ${{ matrix.arch }} installer is missing.' }
           Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
@@ -112,7 +112,7 @@ jobs:
           foreach ($shortcut in @($desktopShortcut, $startShortcut)) {
             if (-not (Test-Path $shortcut)) { Fail "The installer did not create the shortcut $shortcut" }
           }
-          Write-Output "::notice title=Installer (${{ matrix.arch }}, ${{ matrix.os }})::Installed $($installer.Name) to $installDir with desktop and Start menu shortcuts"
+          Write-Output "::notice title=Installer (${{ matrix.arch }} on ${{ matrix.os }})::Installed $($installer.Name) to $installDir with desktop and Start menu shortcuts"
 
           node desktop/scripts/smoke.mjs $exe smoke-results "${{ matrix.arch }} on ${{ matrix.os }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -121,7 +121,7 @@ jobs:
           $deadline = (Get-Date).AddSeconds(60)
           while ((Test-Path $exe) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
           if (Test-Path $exe) { Fail "The uninstaller left $exe behind" }
-          Write-Output "::notice title=Uninstaller (${{ matrix.arch }}, ${{ matrix.os }})::POSI was removed cleanly"
+          Write-Output "::notice title=Uninstaller (${{ matrix.arch }} on ${{ matrix.os }})::POSI was removed cleanly"
 
       - name: Upload smoke test results
         if: always()

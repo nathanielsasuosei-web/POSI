@@ -10,10 +10,10 @@ POSI is also a desktop app for **Windows 7 SP1, 8, 8.1, 10 and 11**, including W
 
 | Your Windows | Download |
 | --- | --- |
-| 64-bit | `POSI-Setup-<version>-64-bit.exe` |
-| 32-bit, or not sure | `POSI-Setup-<version>-32-bit.exe` (also runs on 64-bit Windows) |
+| 64-bit (most computers) | `POSI-Setup-<version>-64-bit.exe` |
+| 32-bit | `POSI-Setup-<version>-32-bit.exe` |
 
-To check which one you have, open **Control Panel → System** and look at **System type**.
+Not sure? Start with the 64-bit installer. If it says **“64-bit Windows is required”**, download the 32-bit one instead. You can also check **Control Panel → System → System type**.
 
 1. Open the downloaded installer. Windows may say **“Windows protected your PC”** because the app is not code-signed yet: click **More info → Run anyway**.
 2. Follow the installer. POSI opens when it finishes and adds shortcuts to the desktop and Start menu.

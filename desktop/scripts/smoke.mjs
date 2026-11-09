@@ -20,6 +20,7 @@ const profileDir = path.join(resultsDir, 'profile');
 const PHASE_TIMEOUT_MS = 180000;
 const inActions = Boolean(process.env.GITHUB_ACTIONS);
 const escape = text => String(text).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+const escapeTitle = text => escape(text).replace(/:/g, '%3A').replace(/,/g, '%2C');
 
 function runPhase(phase) {
   const outDir = path.join(resultsDir, phase);
@@ -69,14 +70,21 @@ for (const phase of ['setup', 'reopen']) {
   for (const item of summary?.checks || []) {
     console.log(`   ${item.ok ? 'ok  ' : 'FAIL'} ${item.name}${item.detail ? ` — ${item.detail}` : ''}`);
     rows.push(`| ${label} | ${phase} | ${item.ok ? '✅' : '❌'} ${item.name} | ${String(item.detail).replace(/\|/g, '\\|')} |`);
-    if (inActions && !item.ok) console.log(`::error title=Smoke test ${label} (${phase})::${escape(`${item.name}: ${item.detail}`)}`);
+  }
+  if (inActions && summary && !passed) {
+    const details = [
+      ...summary.checks.map(item => `${item.ok ? 'ok' : 'FAILED'} · ${item.name}${item.detail ? ` · ${item.detail}` : ''}`),
+      ...(summary.problems.length ? ['', 'Problems:', ...summary.problems] : []),
+      ...(summary.events && summary.events.length ? ['', 'Timeline:', ...summary.events] : []),
+    ];
+    console.log(`::error title=${escapeTitle(`Smoke test ${label} (${phase}) failed`)}::${escape(details.join('\n'))}`);
   }
   if (!summary) {
     rows.push(`| ${label} | ${phase} | ❌ No results | ${result.error || `exit code ${result.exitCode}`} |`);
-    if (inActions) console.log(`::error title=Smoke test ${label} (${phase})::${escape(`No summary.json was written (${result.error || `exit code ${result.exitCode}`})`)}`);
+    if (inActions) console.log(`::error title=${escapeTitle(`Smoke test ${label} (${phase}) failed`)}::${escape(`No summary.json was written (${result.error || `exit code ${result.exitCode}`})`)}`);
   }
   if (inActions && passed) {
-    console.log(`::notice title=Smoke test ${label} (${phase}) passed::${escape(`${summary.checks.length} checks · ${about}`)}`);
+    console.log(`::notice title=${escapeTitle(`Smoke test ${label} (${phase}) passed`)}::${escape(`${summary.checks.length} checks · ${about}`)}`);
   }
   if (!passed) break; // reopening only makes sense after a successful setup
 }

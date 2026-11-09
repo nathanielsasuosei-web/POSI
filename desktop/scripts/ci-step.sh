@@ -11,7 +11,8 @@ log="$(mktemp)"
 status=${PIPESTATUS[0]}
 if [ "$status" -ne 0 ]; then
   message="$(tail -n 40 "$log" | sed -e 's/\r$//' -e 's/%/%25/g' | awk 'BEGIN { ORS = "%0A" } { print }')"
-  echo "::error title=${title} failed::${message}"
+  safe_title="$(printf '%s failed' "$title" | sed -e 's/%/%25/g' -e 's/,/%2C/g' -e 's/:/%3A/g')"
+  echo "::error title=${safe_title}::${message}"
 fi
 rm -f "$log"
 exit "$status"

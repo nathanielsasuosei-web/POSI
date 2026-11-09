@@ -4,10 +4,12 @@ POSI for Windows: pharmacy point of sale, stock, sales, expenses, staff and repo
 
 | Your Windows | Download |
 | --- | --- |
-| 64-bit | **POSI-Setup-{{version}}-64-bit.exe** |
-| 32-bit, or not sure | **POSI-Setup-{{version}}-32-bit.exe** (also runs on 64-bit Windows) |
+| 64-bit (most computers) | **POSI-Setup-{{version}}-64-bit.exe** |
+| 32-bit | **POSI-Setup-{{version}}-32-bit.exe** |
 
-Runs on **Windows 7 SP1, 8, 8.1, 10 and 11**. To see which Windows you have, open **Control Panel → System** and look at **System type**.
+Not sure? Start with the 64-bit installer. If it says **“64-bit Windows is required”**, download the 32-bit one instead. You can also check **Control Panel → System → System type**.
+
+Runs on **Windows 7 SP1, 8, 8.1, 10 and 11**.
 
 ### Install
 
