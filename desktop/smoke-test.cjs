@@ -26,6 +26,7 @@ const started = Date.now();
 let currentStep = 'starting';
 let finished = false;
 let onDownload = null;
+let windowShown = Promise.resolve();
 const messageBoxes = [];
 
 function note(text) {
@@ -124,6 +125,9 @@ function pageTools(contents) {
       return js(`(document.querySelector(${quote(selector)}) || {}).textContent || ''`);
     },
     async screenshot(name) {
+      // The window starts hidden and appears on first paint; capturing a hidden
+      // window never completes, so wait until it is on screen.
+      await withTimeout(windowShown, 30000, 'The window was not shown within 30 seconds');
       const image = await withTimeout(contents.capturePage(), 15000, `The window did not paint within 15 seconds (screenshot ${name})`);
       fs.writeFileSync(path.join(OUTPUT_DIR, name), image.toPNG());
     },
@@ -258,6 +262,12 @@ function run(app, win) {
   const contents = win.webContents;
   note('window created');
   win.once('ready-to-show', () => note('window ready to show'));
+  windowShown = win.isVisible()
+    ? Promise.resolve()
+    : new Promise(resolve => win.once('show', () => {
+      note('window shown');
+      setTimeout(resolve, 300); // let the first frame reach the screen
+    }));
   contents.on('dom-ready', () => note('page DOM ready'));
   contents.on('did-finish-load', () => note('page loaded'));
   contents.on('unresponsive', () => {
