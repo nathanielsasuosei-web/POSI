@@ -5,6 +5,7 @@
 // Electron 22 runs Node 16 and cannot load ES modules here, so this file is CommonJS.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { app, BrowserWindow, Menu, dialog, ipcMain, protocol, session, shell } = require('electron');
 const { APP_HOST, APP_SCHEME, isAppUrl, isSafeExternalUrl, resolveAppRequest } = require('./app-files.cjs');
@@ -15,6 +16,18 @@ const RENDERER_DIR = path.join(__dirname, 'renderer');
 // Shop records live in Chromium's local storage. It is written in batches, so
 // push pending writes to disk often: power cuts should lose seconds, not minutes.
 const STORAGE_FLUSH_MS = 3000;
+
+// Electron 22's Chromium sandbox crashes the page and GPU processes at start on
+// Windows 11 24H2 and later (build 26100+, also Windows Server 2025). Newer
+// Electron versions fixed this but no longer run on Windows 7/8, so on those
+// Windows builds only, POSI runs without Chromium's process sandbox. The app
+// only ever loads its own bundled files, under a strict Content-Security-Policy.
+function sandboxCrashesOnThisWindows() {
+  if (process.platform !== 'win32') return false;
+  const [major, minor, build] = os.release().split('.').map(Number);
+  return major > 10 || (major === 10 && minor === 0 && build >= 26100);
+}
+if (sandboxCrashesOnThisWindows()) app.commandLine.appendSwitch('no-sandbox');
 
 // CI-only self test, enabled with POSI_SMOKE_TEST=<results folder>.
 const smokeTest = process.env.POSI_SMOKE_TEST ? require('./smoke-test.cjs') : null;

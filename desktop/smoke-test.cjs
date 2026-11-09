@@ -115,7 +115,7 @@ async function signIn(page) {
   await page.waitFor('.app-shell');
 }
 
-async function setupPhase(contents, page) {
+async function setupPhase(app, contents, page) {
   await page.waitFor('.setup-page');
   const env = await page.js(`({
     desktop: Boolean(window.posiDesktop && window.posiDesktop.isDesktop),
@@ -127,7 +127,8 @@ async function setupPhase(contents, page) {
     styled: getComputedStyle(document.querySelector('.setup-page')).display === 'grid',
     noNode: typeof require === 'undefined' && typeof process === 'undefined',
   })`);
-  check('App window opens on the setup screen', true, `${env.engine} · ${env.origin}`);
+  const sandbox = app.commandLine.hasSwitch('no-sandbox') ? 'sandbox off (Windows 24H2+ workaround)' : 'sandbox on';
+  check('App window opens on the setup screen', true, `${env.engine} · ${env.origin} · ${sandbox}`);
   check('Desktop bridge is available', env.desktop && env.version, `POSI ${env.version}`);
   check('Secure origin with Web Crypto', env.secure && env.webCrypto && env.origin === 'posi://app', env.origin);
   check('Styles are applied', env.styled);
@@ -208,6 +209,7 @@ function finish(app, error) {
     chrome: process.versions.chrome,
     arch: process.arch,
     os: `${os.type()} ${os.release()}`,
+    sandbox: !app.commandLine.hasSwitch('no-sandbox'),
     checks,
     problems,
   };
@@ -233,7 +235,7 @@ function run(app, win) {
   const page = pageTools(contents);
   const ready = contents.isLoading() ? loaded(contents) : Promise.resolve();
   ready
-    .then(() => (PHASE === 'reopen' ? reopenPhase(page) : setupPhase(contents, page)))
+    .then(() => (PHASE === 'reopen' ? reopenPhase(page) : setupPhase(app, contents, page)))
     .then(() => {
       if (problems.length) checks.push({ name: 'No console or loading errors', ok: false, detail: problems.join(' | ') });
       else checks.push({ name: 'No console or loading errors', ok: true, detail: '' });

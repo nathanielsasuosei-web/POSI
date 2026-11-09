@@ -64,7 +64,8 @@ for (const phase of ['setup', 'reopen']) {
   allPassed &&= passed;
 
   console.log(`\n== ${label} · ${phase}: ${passed ? 'PASSED' : 'FAILED'} (exit code ${result.exitCode ?? 'none'}${result.error ? `, ${result.error}` : ''})`);
-  if (summary) console.log(`   POSI ${summary.app} · Electron ${summary.electron} · Chromium ${summary.chrome} · ${summary.arch} · ${summary.os}`);
+  const about = summary ? `Electron ${summary.electron} · Chromium ${summary.chrome} · ${summary.arch} · ${summary.os} · sandbox ${summary.sandbox ? 'on' : 'off'}` : '';
+  if (summary) console.log(`   POSI ${summary.app} · ${about}`);
   for (const item of summary?.checks || []) {
     console.log(`   ${item.ok ? 'ok  ' : 'FAIL'} ${item.name}${item.detail ? ` — ${item.detail}` : ''}`);
     rows.push(`| ${label} | ${phase} | ${item.ok ? '✅' : '❌'} ${item.name} | ${String(item.detail).replace(/\|/g, '\\|')} |`);
@@ -75,7 +76,7 @@ for (const phase of ['setup', 'reopen']) {
     if (inActions) console.log(`::error title=Smoke test ${label} (${phase})::${escape(`No summary.json was written (${result.error || `exit code ${result.exitCode}`})`)}`);
   }
   if (inActions && passed) {
-    console.log(`::notice title=Smoke test ${label} (${phase}) passed::${escape(`${summary.checks.length} checks · Electron ${summary.electron} · Chromium ${summary.chrome} · ${summary.arch} · ${summary.os}`)}`);
+    console.log(`::notice title=Smoke test ${label} (${phase}) passed::${escape(`${summary.checks.length} checks · ${about}`)}`);
   }
   if (!passed) break; // reopening only makes sense after a successful setup
 }

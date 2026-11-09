@@ -9,6 +9,7 @@ Electron 22 (Chromium 108) is the **last Electron release that runs on Windows 7
 - `electron` is pinned to `22.3.27`, the final 22.x release. **Do not upgrade it** unless you are prepared to drop Windows 7, 8 and 8.1.
 - `npm run build:desktop` compiles the web app for Chromium 108 (Vite's default target is newer).
 - Electron 22 no longer receives security fixes, so the app keeps its exposure small: it loads only its own bundled files from `posi://app` under a strict Content-Security-Policy, opens web links in the default browser, blocks other navigation, pop-up windows, webviews and permission requests, and the page runs sandboxed without Node.js access.
+- On **Windows 11 24H2 and later** (build 26100+, also Windows Server 2025), Electron 22's Chromium sandbox crashes the app's page at start. On those Windows builds only, `main.cjs` starts Chromium with `--no-sandbox`; Windows 7 to 11 23H2 keep the sandbox.
 - Electron 22's built-in `alert()`/`confirm()` stop text boxes from receiving typing on Windows once they close ([electron#31917](https://github.com/electron/electron/issues/31917)). In the desktop app, `src/platform.js` routes them to the app's own Windows message boxes instead.
 
 ## How it works
@@ -48,10 +49,8 @@ npm run dist              # installers in desktop/release/
 
 The **Windows desktop app** workflow runs on every pull request and push to `main`. It:
 
-1. builds both installers on Windows;
-2. runs the self test on the 64-bit and 32-bit apps: create a store, sign in, message boxes, export a backup, print to PDF, reload, then restart and sign in again;
-3. installs the 64-bit installer silently, checks the shortcuts, tests the installed app and uninstalls it;
-4. uploads the installers (`POSI-Windows-installers`) and the self-test screenshots (`smoke-test-results`) as workflow artifacts.
+1. builds both installers on Windows and uploads them as the `POSI-Windows-installers` artifact;
+2. on Windows Server 2022 (sandbox on, like Windows 7 to 11 23H2) and Windows Server 2025 (Windows 11 24H2 code base), silently installs each installer, checks the shortcuts, runs the installed app's self test and uninstalls it. The self test creates a store, signs in, uses the message boxes, exports a backup, prints to PDF and reloads, then restarts the app and signs in again. Screenshots are uploaded as `smoke-test-results-*` artifacts.
 
 On `main` it then publishes a GitHub release `v<version>` using `version` from `desktop/package.json`, unless that version is already released. **To publish an update, raise `version` in `desktop/package.json`** (and edit `release-notes.md` if needed), then merge to `main`. A release can also be published from the Actions tab: run the workflow on `main` with **publish** ticked.
 
