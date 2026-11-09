@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -34,8 +34,55 @@ function offlinePrecachePlugin() {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), offlinePrecachePlugin()],
-  server: { host: '0.0.0.0', allowedHosts: true },
-  preview: { host: '0.0.0.0', allowedHosts: true },
+// Windows desktop app (`npm run build:desktop`). It runs on Electron 22, whose
+// Chromium 108 engine is the newest that Windows 7, 8 and 8.1 can run, so the
+// code is compiled for Chromium 108 instead of Vite's default (Chrome 111+).
+const DESKTOP_TARGET = ['chrome108'];
+const DESKTOP_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+].join('; ');
+
+function desktopShellPlugin() {
+  let outDir;
+  return {
+    name: 'posi-desktop-shell',
+    apply: 'build',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    transformIndexHtml() {
+      return [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: DESKTOP_CSP }, injectTo: 'head-prepend' }];
+    },
+    // The installed app ships its own files and needs no service worker.
+    async closeBundle() {
+      await rm(resolve(outDir, 'service-worker.js'), { force: true });
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  const shared = {
+    server: { host: '0.0.0.0', allowedHosts: true },
+    preview: { host: '0.0.0.0', allowedHosts: true },
+  };
+  if (mode !== 'desktop') return { ...shared, plugins: [react(), offlinePrecachePlugin()] };
+  return {
+    ...shared,
+    plugins: [react(), desktopShellPlugin()],
+    build: {
+      outDir: 'desktop/renderer',
+      emptyOutDir: true,
+      target: DESKTOP_TARGET,
+      cssTarget: DESKTOP_TARGET,
+      chunkSizeWarningLimit: 1024, // loaded from disk, not over the network
+    },
+  };
 });

@@ -15,6 +15,7 @@ import {
   DEFAULT_SETTINGS, DEFAULT_MAINTENANCE, TimelinePage, LeadsPage, MaintenancePage, SettingsPage
 } from './operations.jsx';
 import { AIAssistantPage } from './assistant.jsx';
+import { desktopApp } from './platform.js';
 
 // Storage keys
 const K = {
@@ -2835,7 +2836,9 @@ function SetupScreen({onComplete}){
       ['shopName','Store name','text',true],['address','Store address','text',false],['phone','Contact phone','tel',false],
       ['name','Owner full name','text',true],['username','Owner username','text',true],['password','Password (8+ characters)','password',true],['confirm','Confirm password','password',true]
     ].map(([key,label,type,required])=><div className="field" key={key}><label htmlFor={'setup-'+key}>{label}</label><input id={'setup-'+key} type={type} required={required} minLength={key==='password'?8:key==='username'?3:undefined} autoComplete={type==='password'?'new-password':key==='username'?'username':'off'} value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})}/></div>)}</div>
-    <p className="setup-note">Stored only in this browser on this device. There is no cloud backup or password recovery service. Export backups regularly in Settings. Existing demo records stay separate and are not imported.</p>
+    <p className="setup-note">{desktopApp
+      ? 'Stored only on this computer. There is no cloud backup or password recovery service. Export backups regularly in Settings.'
+      : 'Stored only in this browser on this device. There is no cloud backup or password recovery service. Export backups regularly in Settings. Existing demo records stay separate and are not imported.'}</p>
     {error && <p role="alert" style={{color:'#b91c1c'}}>{error}</p>}
     <button className="btn primary" disabled={busy} type="submit">{busy?'Creating store…':'Create store & continue to sign in'} <ArrowRight size={16}/></button>
   </form></div>;
@@ -2847,7 +2850,7 @@ function Root(){
     try{ return JSON.parse(localStorage.getItem(SETUP_KEY)) || null }catch{ return null }
   });
   const restart = ()=>{
-    if(!window.confirm('Start a completely new store? This permanently deletes this browser’s current shop accounts, inventory, sales and other shop records. Export a backup in Settings first if needed. This cannot be undone.')) return;
+    if(!window.confirm('Start a completely new store? This permanently deletes '+(desktopApp?'this computer’s':'this browser’s')+' current shop accounts, inventory, sales and other shop records. Export a backup in Settings first if needed. This cannot be undone.')) return;
     try{
       // Remove the setup marker last; keep unrelated browser and legacy demo data untouched.
       Object.values(K).forEach(key=>localStorage.removeItem(key));

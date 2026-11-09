@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env*
 .DS_Store
+# Windows desktop app build output (see desktop/README.md)
+desktop/renderer/
+desktop/release/

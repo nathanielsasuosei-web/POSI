@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, Send, Bot, UserRound, Trash2, WifiOff, ShieldCheck } from 'lucide-react';
+import { desktopApp } from './platform.js';
 
 /* ------------------------------------------------------------------------- *
  * POSI on-device assistant
@@ -936,7 +937,7 @@ function invoiceAnswer(ctx, q){
 function helpAnswer(ctx){
   return {
     title: 'What I can answer',
-    summary: `I am POSI’s on-device assistant for the owner. I read the sales, stock, customer, expense, staff and maintenance records already saved in this browser — no internet required — and answer in plain language. Ask me things like:`,
+    summary: `I am POSI’s on-device assistant for the owner. I read the sales, stock, customer, expense, staff and maintenance records already saved ${desktopApp ? 'on this computer' : 'in this browser'} — no internet required — and answer in plain language. Ask me things like:`,
     bullets: [
       '“How are sales today?” · “Compare this week with last week”',
       '“Show my profit this month” · “Where is my money going?”',

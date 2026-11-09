@@ -1,0 +1,180 @@
+name: Windows desktop app
+
+# Builds the POSI Windows installers (Windows 7, 8, 8.1, 10 and 11) and tests
+# them on a real Windows machine. On main, a GitHub release is published for
+# each new version in desktop/package.json. See desktop/README.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a release for the current desktop version (main only; skipped if it already exists)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build installers
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      - name: Install web app dependencies
+        run: bash desktop/scripts/ci-step.sh "Web app install" npm ci
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1' # electron-builder downloads its own copies
+        run: bash scripts/ci-step.sh "Desktop install" npm ci
+
+      - name: Unit tests
+        working-directory: desktop
+        run: bash scripts/ci-step.sh "Unit tests" npm test
+
+      - name: Build the app for Chromium 108
+        run: bash desktop/scripts/ci-step.sh "Desktop web build" npm run build:desktop
+
+      - name: Build the 64-bit and 32-bit installers
+        working-directory: desktop
+        run: |
+          bash scripts/ci-step.sh "Installer build" npm run dist
+          ls -l release
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: POSI-Windows-installers
+          path: desktop/release/POSI-Setup-*.exe
+          if-no-files-found: error
+          compression-level: 0 # installers are already compressed
+
+  test:
+    # windows-2022 runs the app with Chromium's sandbox, like Windows 7 to 11 23H2;
+    # windows-2025 shares Windows 11 24H2's code base, where it runs without it.
+    name: Test ${{ matrix.arch }} installer on ${{ matrix.os }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+        arch: [64-bit, 32-bit]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: POSI-Windows-installers
+          path: installers
+
+      - name: Install, run and uninstall
+        shell: pwsh
+        run: |
+          function Fail($message) { Write-Output "::error title=Installer test (${{ matrix.arch }} on ${{ matrix.os }}) failed::$message"; exit 1 }
+          $installer = Get-ChildItem installers/POSI-Setup-*-${{ matrix.arch }}.exe | Select-Object -First 1
+          if (-not $installer) { Fail 'The ${{ matrix.arch }} installer is missing.' }
+          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
+
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\POSI'
+          $exe = Join-Path $installDir 'POSI.exe'
+          if (-not (Test-Path $exe)) { Fail "The installer did not create $exe" }
+          $desktopShortcut = Join-Path ([Environment]::GetFolderPath('Desktop')) 'POSI.lnk'
+          $startShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\POSI.lnk'
+          foreach ($shortcut in @($desktopShortcut, $startShortcut)) {
+            if (-not (Test-Path $shortcut)) { Fail "The installer did not create the shortcut $shortcut" }
+          }
+          Write-Output "::notice title=Installer (${{ matrix.arch }} on ${{ matrix.os }})::Installed $($installer.Name) to $installDir with desktop and Start menu shortcuts"
+
+          node desktop/scripts/smoke.mjs $exe smoke-results "${{ matrix.arch }} on ${{ matrix.os }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          Start-Process -FilePath (Join-Path $installDir 'Uninstall POSI.exe') -ArgumentList '/S' -Wait
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path $exe) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+          if (Test-Path $exe) { Fail "The uninstaller left $exe behind" }
+          Write-Output "::notice title=Uninstaller (${{ matrix.arch }} on ${{ matrix.os }})::POSI was removed cleanly"
+
+      - name: Upload smoke test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-test-results-${{ matrix.os }}-${{ matrix.arch }}
+          path: smoke-results/
+          if-no-files-found: ignore
+
+  release:
+    name: Publish GitHub release
+    needs: [build, test]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check whether this version is already released
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./desktop/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Release skipped::POSI v$version is already released. Raise the version in desktop/package.json to publish a new one."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download installers
+        if: steps.version.outputs.exists == 'false'
+        uses: actions/download-artifact@v8
+        with:
+          name: POSI-Windows-installers
+          path: installers
+
+      - name: Publish release
+        if: steps.version.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd installers
+          sha256sum POSI-Setup-*.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          sed "s/{{version}}/$VERSION/g" ../desktop/release-notes.md > ../release-notes.md
+          gh release create "v$VERSION" POSI-Setup-*.exe SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "POSI $VERSION for Windows" \
+            --notes-file ../release-notes.md
+          echo "::notice title=Released::https://github.com/${GITHUB_REPOSITORY}/releases/tag/v$VERSION"
