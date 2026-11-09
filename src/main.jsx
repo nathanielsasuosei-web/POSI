@@ -1013,10 +1013,7 @@ function LoginScreen({onSignIn,shop=SHOP,onRestart}){
           <button className="btn primary" style={{width:'100%',marginTop:'16px',justifyContent:'space-between'}} disabled={busy}>
             <span>{busy?'Signing in…':'Sign in'}</span><ArrowRight size={18}/>
           </button>
-          <button type="button" className="btn" style={{width:'100%',marginTop:'12px'}} onClick={onRestart}>Start fresh · create my owner account</button>
-          <p style={{fontSize:'11px',color:'#6b7d76'}}>Starting fresh deletes this device’s current shop records and opens store setup. You will be asked to confirm.</p>
-
-
+          {/* "Start fresh · create my owner account" is intentionally hidden on the sign-in screen. */}
         </form>
       </div>
     </div>
